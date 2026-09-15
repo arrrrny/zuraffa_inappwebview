@@ -3,6 +3,6 @@
 library;
 
 export 'src/register.dart';
-export 'src/android_inappwebview_channel.dart';
-export 'src/android_inappwebview_exception.dart';
-export 'src/android_inappwebview_port.dart';
+export 'src/android_webview_channel.dart';
+export 'src/android_webview_exception.dart';
+export 'src/android_webview_port.dart';

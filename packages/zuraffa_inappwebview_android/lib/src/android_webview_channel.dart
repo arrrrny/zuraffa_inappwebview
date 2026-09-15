@@ -1,11 +1,11 @@
 import 'package:zuraffa_inappwebview_platform/zuraffa_inappwebview_platform.dart';
 
-import 'ios_inappwebview_exception.dart';
+import 'android_webview_exception.dart';
 
-/// The iOS channel: the shared
-/// [PlatformInappwebviewEnvelope] machinery with the iOS
+/// The Android channel: the shared
+/// [PlatformWebviewEnvelope] machinery with the Android
 /// taxonomy as a pure data set.
-class IosInappwebviewChannel {
+class AndroidWebviewChannel {
   /// Native codes that map recoverable; everything else (including
   /// unknown codes) is non-recoverable, preserved verbatim.
   static const Set<String> recoverableCodes = {
@@ -18,7 +18,7 @@ class IosInappwebviewChannel {
   final ChannelInvoke invoke;
   final Duration timeout;
 
-  const IosInappwebviewChannel({
+  const AndroidWebviewChannel({
     required this.invoke,
     this.timeout = const Duration(seconds: 30),
   });
@@ -27,16 +27,16 @@ class IosInappwebviewChannel {
     String method,
     Map<String, Object?> args,
   ) =>
-      PlatformInappwebviewEnvelope(
+      PlatformWebviewEnvelope(
         invoke: invoke,
         timeout: timeout,
-        onTyped: IosInappwebviewException.new,
+        onTyped: AndroidWebviewException.new,
         mapNativeError: _mapNativeError,
-        isTypedError: (error) => error is IosInappwebviewException,
+        isTypedError: (error) => error is AndroidWebviewException,
       ).call(method, args);
 
   static Exception _mapNativeError(String code, String message) =>
-      IosInappwebviewException(
+      AndroidWebviewException(
         code,
         message,
         recoverable: recoverableCodes.contains(code),

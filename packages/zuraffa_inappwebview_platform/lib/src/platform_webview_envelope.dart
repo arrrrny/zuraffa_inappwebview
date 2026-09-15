@@ -21,7 +21,7 @@ typedef PlatformErrorMapper = Exception? Function(String code, String message);
 
 /// Recognizes the calling adapter's typed exceptions so a typed failure
 /// thrown inside [ChannelInvoke] passes through
-/// [PlatformInappwebviewEnvelope.call] without double wrapping.
+/// [PlatformWebviewEnvelope.call] without double wrapping.
 typedef TypedErrorPredicate = bool Function(Object error);
 
 /// Sentinel for the envelope's own timeout: thrown by the `onTimeout`
@@ -36,14 +36,14 @@ class _EnvelopeTimeout implements Exception {
 /// payloads and thrown transport failures surface as typed exceptions
 /// (built by the calling adapter's own factory), and a call past [timeout]
 /// surfaces as a recoverable `timeout`.
-class PlatformInappwebviewEnvelope {
+class PlatformWebviewEnvelope {
   final ChannelInvoke invoke;
   final Duration timeout;
   final PlatformExceptionFactory onTyped;
   final PlatformErrorMapper? mapNativeError;
   final TypedErrorPredicate? isTypedError;
 
-  const PlatformInappwebviewEnvelope({
+  const PlatformWebviewEnvelope({
     required this.invoke,
     required this.onTyped,
     this.mapNativeError,

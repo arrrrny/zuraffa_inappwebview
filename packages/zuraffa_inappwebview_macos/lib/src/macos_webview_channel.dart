@@ -1,11 +1,11 @@
 import 'package:zuraffa_inappwebview_platform/zuraffa_inappwebview_platform.dart';
 
-import 'macos_inappwebview_exception.dart';
+import 'macos_webview_exception.dart';
 
 /// The macOS channel: the shared
-/// [PlatformInappwebviewEnvelope] machinery with the macOS
+/// [PlatformWebviewEnvelope] machinery with the macOS
 /// taxonomy as a pure data set.
-class MacosInappwebviewChannel {
+class MacosWebviewChannel {
   /// Native codes that map recoverable; everything else (including
   /// unknown codes) is non-recoverable, preserved verbatim.
   static const Set<String> recoverableCodes = {
@@ -18,7 +18,7 @@ class MacosInappwebviewChannel {
   final ChannelInvoke invoke;
   final Duration timeout;
 
-  const MacosInappwebviewChannel({
+  const MacosWebviewChannel({
     required this.invoke,
     this.timeout = const Duration(seconds: 30),
   });
@@ -27,16 +27,16 @@ class MacosInappwebviewChannel {
     String method,
     Map<String, Object?> args,
   ) =>
-      PlatformInappwebviewEnvelope(
+      PlatformWebviewEnvelope(
         invoke: invoke,
         timeout: timeout,
-        onTyped: MacosInappwebviewException.new,
+        onTyped: MacosWebviewException.new,
         mapNativeError: _mapNativeError,
-        isTypedError: (error) => error is MacosInappwebviewException,
+        isTypedError: (error) => error is MacosWebviewException,
       ).call(method, args);
 
   static Exception _mapNativeError(String code, String message) =>
-      MacosInappwebviewException(
+      MacosWebviewException(
         code,
         message,
         recoverable: recoverableCodes.contains(code),

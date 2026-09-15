@@ -1,10 +1,10 @@
 /// The typed native failure on Android.
-class AndroidInappwebviewException implements Exception {
+class AndroidWebviewException implements Exception {
   final String code;
   final String message;
   final bool recoverable;
 
-  const AndroidInappwebviewException(
+  const AndroidWebviewException(
     this.code,
     this.message, {
     required this.recoverable,
@@ -12,5 +12,5 @@ class AndroidInappwebviewException implements Exception {
 
   @override
   String toString() =>
-      'AndroidInappwebviewException($code, recoverable: $recoverable): $message';
+      'AndroidWebviewException($code, recoverable: $recoverable): $message';
 }

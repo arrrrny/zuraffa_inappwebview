@@ -26,9 +26,9 @@ void main() {
   }) =>
       _EnvelopeFailure(code, message, recoverable: recoverable);
 
-  group('PlatformInappwebviewEnvelope', () {
+  group('PlatformWebviewEnvelope', () {
     test('decodes success payloads', () async {
-      final envelope = PlatformInappwebviewEnvelope(
+      final envelope = PlatformWebviewEnvelope(
         invoke: (_, __) async => {'supported': true},
         onTyped: typedFactory,
       );
@@ -40,7 +40,7 @@ void main() {
     });
 
     test('native error payloads surface through the taxonomy', () async {
-      final envelope = PlatformInappwebviewEnvelope(
+      final envelope = PlatformWebviewEnvelope(
         invoke: (_, __) async => {
           'error': {'code': 'not_supported', 'message': 'no engine'},
         },
@@ -56,7 +56,7 @@ void main() {
 
     test('unmapped native codes fall through to the adapter factory',
         () async {
-      final envelope = PlatformInappwebviewEnvelope(
+      final envelope = PlatformWebviewEnvelope(
         invoke: (_, __) async => {
           'error': {'code': 'weird', 'message': 'unexpected'},
         },
@@ -75,7 +75,7 @@ void main() {
 
     test('a past-timeout call surfaces as the typed recoverable timeout',
         () async {
-      final envelope = PlatformInappwebviewEnvelope(
+      final envelope = PlatformWebviewEnvelope(
         invoke: (_, __) => Completer<Map<String, Object?>>().future,
         onTyped: typedFactory,
         timeout: const Duration(milliseconds: 20),
@@ -92,7 +92,7 @@ void main() {
     });
 
     test('non-map payloads surface as malformed_response', () async {
-      final envelope = PlatformInappwebviewEnvelope(
+      final envelope = PlatformWebviewEnvelope(
         invoke: (_, __) async => [1, 2, 3],
         onTyped: typedFactory,
       );
@@ -108,7 +108,7 @@ void main() {
 
     test('adapter-typed failures thrown by the transport pass through',
         () async {
-      final envelope = PlatformInappwebviewEnvelope(
+      final envelope = PlatformWebviewEnvelope(
         invoke: (_, __) => throw const _Typed('already_typed'),
         onTyped: typedFactory,
         isTypedError: (error) => error is _Typed,

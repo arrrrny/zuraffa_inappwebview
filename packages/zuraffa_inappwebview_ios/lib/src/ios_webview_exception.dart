@@ -1,10 +1,10 @@
 /// The typed native failure on iOS.
-class IosInappwebviewException implements Exception {
+class IosWebviewException implements Exception {
   final String code;
   final String message;
   final bool recoverable;
 
-  const IosInappwebviewException(
+  const IosWebviewException(
     this.code,
     this.message, {
     required this.recoverable,
@@ -12,5 +12,5 @@ class IosInappwebviewException implements Exception {
 
   @override
   String toString() =>
-      'IosInappwebviewException($code, recoverable: $recoverable): $message';
+      'IosWebviewException($code, recoverable: $recoverable): $message';
 }

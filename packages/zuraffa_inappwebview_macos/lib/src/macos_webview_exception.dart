@@ -1,10 +1,10 @@
 /// The typed native failure on macOS.
-class MacosInappwebviewException implements Exception {
+class MacosWebviewException implements Exception {
   final String code;
   final String message;
   final bool recoverable;
 
-  const MacosInappwebviewException(
+  const MacosWebviewException(
     this.code,
     this.message, {
     required this.recoverable,
@@ -12,5 +12,5 @@ class MacosInappwebviewException implements Exception {
 
   @override
   String toString() =>
-      'MacosInappwebviewException($code, recoverable: $recoverable): $message';
+      'MacosWebviewException($code, recoverable: $recoverable): $message';
 }

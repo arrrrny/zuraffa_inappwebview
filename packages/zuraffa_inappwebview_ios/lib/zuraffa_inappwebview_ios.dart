@@ -3,6 +3,6 @@
 library;
 
 export 'src/register.dart';
-export 'src/ios_inappwebview_channel.dart';
-export 'src/ios_inappwebview_exception.dart';
-export 'src/ios_inappwebview_port.dart';
+export 'src/ios_webview_channel.dart';
+export 'src/ios_webview_exception.dart';
+export 'src/ios_webview_port.dart';
