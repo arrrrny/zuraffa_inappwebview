@@ -1,3 +1,4 @@
+import 'navigation_tracking.dart';
 import 'webview_types.dart';
 
 /// The platform-neutral port every adapter implements. Pure Dart — the
@@ -50,6 +51,11 @@ abstract class WebviewPort {
   /// Exports the rendered page as PDF bytes (null on failure).
   /// Channel: `exportPdf`, response key `data`.
   Future<List<int>?> exportPdf({required String id});
+
+  /// Navigation events pushed by the platform for the webview bound to
+  /// [id] (spec 004). Channel event method `navigationEvents`, payload
+  /// `{'id', 'type', 'url', 'isMainFrame', 'code'}`.
+  Stream<WebviewNavigationEvent> navigationEvents({required String id});
 
   /// Stores [cookie] in the webview's shared cookie store.
   Future<void> setCookie(WebviewCookie cookie);

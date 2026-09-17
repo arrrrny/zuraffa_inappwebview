@@ -109,6 +109,31 @@ class IosWebviewPort implements WebviewPort {
   }
 
   @override
+  Stream<WebviewNavigationEvent> navigationEvents({required String id}) {
+    final source = channel.eventSource;
+    if (source == null) {
+      return Stream.error(const IosWebviewException(
+        'channel_not_wired',
+        'No event source was injected — pass one to the channel to '
+        'subscribe to navigation events.',
+        recoverable: false,
+      ));
+    }
+    return source('navigationEvents').asyncMap((raw) {
+      if (raw is! Map) {
+        throw const IosWebviewException(
+          'malformed_response',
+          'A navigation event carried a non-map payload.',
+          recoverable: false,
+        );
+      }
+      return Map<String, Object?>.from(raw);
+    }).where((map) => map['id'] == id).map(
+          WebviewNavigationEvent.fromChannelArgs,
+        );
+  }
+
+  @override
   Future<void> setCookie(WebviewCookie cookie) async {
     await channel.call('setCookie', cookie.toChannelArgs());
   }

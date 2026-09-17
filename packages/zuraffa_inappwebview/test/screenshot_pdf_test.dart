@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:test/test.dart';
 import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
 
@@ -57,6 +59,10 @@ class CaptureFakePort implements WebviewPort {
     lastPdfId = id;
     return pdfBytes;
   }
+
+  @override
+  Stream<WebviewNavigationEvent> navigationEvents({required String id}) =>
+      const Stream.empty();
 
   @override
   Future<void> setCookie(WebviewCookie cookie) async {}

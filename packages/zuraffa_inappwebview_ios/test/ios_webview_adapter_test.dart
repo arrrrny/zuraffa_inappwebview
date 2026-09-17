@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:test/test.dart';
 import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
 import 'package:zuraffa_inappwebview_ios/zuraffa_inappwebview_ios.dart';
@@ -130,6 +132,57 @@ void main() {
       expect(await port.exportPdf(id: 'w'), [9, 8, 7]);
       expect(lastMethod, 'exportPdf');
       expect(lastArgs['id'], 'w');
+    });
+  });
+
+  group('navigation events (spec 004)', () {
+    late StreamController<Object?> events;
+
+    IosWebviewChannel wired() => IosWebviewChannel(
+          invoke: (m, a) async => {'ok': true},
+          eventSource: (method) => method == 'navigationEvents'
+              ? events.stream.asBroadcastStream()
+              : const Stream.empty(),
+        );
+
+    setUp(() => events = StreamController<Object?>());
+    tearDown(() => unawaited(events.close()));
+
+    test('N7: decodes and filters by id', () async {
+      port = IosWebviewPort(channel: wired());
+      final seen = <WebviewNavigationEvent>[];
+      final sub = port.navigationEvents(id: 'w').listen(seen.add);
+      events.add({'id': 'other', 'type': 'started', 'url': 'x'});
+      events.add({'id': 'w', 'type': 'started', 'url': 'https://x.dev/'});
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, hasLength(1));
+      expect(seen.single.url, 'https://x.dev/');
+      expect(seen.single.phase, WebviewNavigationPhase.started);
+      await sub.cancel();
+    });
+
+    test('N7: non-map payload -> malformed_response stream error', () async {
+      port = IosWebviewPort(channel: wired());
+      final stream = port.navigationEvents(id: 'w');
+      final probe = expectLater(
+        stream,
+        emitsError(isA<IosWebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+      await Future<void>.delayed(Duration.zero);
+      events.add('oops');
+      await probe;
+    });
+
+    test('N7: missing event source -> channel_not_wired', () async {
+      port = IosWebviewPort(
+        channel: IosWebviewChannel(invoke: (m, a) async => {'ok': true}),
+      );
+      await expectLater(
+        port.navigationEvents(id: 'w'),
+        emitsError(isA<IosWebviewException>()
+            .having((e) => e.code, 'code', 'channel_not_wired')),
+      );
     });
   });
 }

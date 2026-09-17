@@ -27,6 +27,7 @@ void registerAndroidWebviewDependencies(
           ? channel
           : AndroidWebviewChannel(
               invoke: channel.invoke,
+              eventSource: channel.eventSource,
               timeout: timeout,
             );
   getIt.registerLazySingleton<WebviewPort>(

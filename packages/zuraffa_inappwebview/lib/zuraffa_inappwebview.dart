@@ -13,6 +13,12 @@ library;
 
 export 'src/dialogue_dismiss.dart'
     show DialogueDismissPolicy, DialogueDismissScript;
+export 'src/navigation_tracking.dart'
+    show
+        NavigationTracker,
+        UrlVisit,
+        WebviewNavigationEvent,
+        WebviewNavigationPhase;
 export 'src/webview_exception.dart';
 export 'src/webview_module.dart'
     show WebviewModule, registerWebview;

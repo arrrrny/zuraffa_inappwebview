@@ -16,10 +16,12 @@ class MacosWebviewChannel {
   };
 
   final ChannelInvoke invoke;
+  final ChannelEventSource? eventSource;
   final Duration timeout;
 
   const MacosWebviewChannel({
     required this.invoke,
+    this.eventSource,
     this.timeout = const Duration(seconds: 30),
   });
 
