@@ -65,6 +65,10 @@ class WebviewSettings {
   final bool supportZoom;
   final Duration loadTimeout;
 
+  /// Removes fixed/sticky overlays (dialogue banners) after load for clean
+  /// captures — off by default; the native side may also honor it (spec 002).
+  final bool dismissDialogues;
+
   const WebviewSettings({
     this.userAgent,
     this.javaScriptEnabled = true,
@@ -73,6 +77,7 @@ class WebviewSettings {
     this.mediaPlaybackRequiresUserGesture = true,
     this.supportZoom = true,
     this.loadTimeout = const Duration(seconds: 30),
+    this.dismissDialogues = false,
   });
 
   Map<String, Object?> toChannelArgs() => {
@@ -83,6 +88,7 @@ class WebviewSettings {
         'mediaPlaybackRequiresUserGesture': mediaPlaybackRequiresUserGesture,
         'supportZoom': supportZoom,
         'loadTimeoutMs': loadTimeout.inMilliseconds,
+        'dismissDialogues': dismissDialogues,
       };
 }
 
