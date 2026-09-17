@@ -48,6 +48,16 @@ class FakeWebviewPort implements WebviewPort {
   Future<String?> getHtml({required String id}) async => htmlResult;
 
   @override
+  Future<List<int>?> takeScreenshot({
+    required String id,
+    ScreenshotConfiguration? config,
+  }) async =>
+      null;
+
+  @override
+  Future<List<int>?> exportPdf({required String id}) async => null;
+
+  @override
   Future<void> setCookie(WebviewCookie cookie) async =>
       storedCookies.add(cookie);
 

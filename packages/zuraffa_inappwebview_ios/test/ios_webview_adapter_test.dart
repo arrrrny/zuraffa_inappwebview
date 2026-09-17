@@ -88,4 +88,48 @@ void main() {
       );
     });
   });
+
+  group('capture ops (spec 003)', () {
+    test('S6: takeScreenshot forwards config args and decodes data',
+        () async {
+      port = IosWebviewPort(channel: scripted(payload: {
+        'data': [1, 2, 3],
+      }));
+      final bytes = await port.takeScreenshot(
+        id: 'w',
+        config: const ScreenshotConfiguration(
+          format: ScreenshotFormat.jpeg,
+          quality: 80,
+        ),
+      );
+      expect(bytes, [1, 2, 3]);
+      expect(lastMethod, 'takeScreenshot');
+      expect(lastArgs['id'], 'w');
+      expect(lastArgs['format'], 'jpeg');
+      expect(lastArgs['quality'], 80);
+    });
+
+    test('S6: null data passes through as null', () async {
+      port = IosWebviewPort(channel: scripted(payload: {'data': null}));
+      expect(await port.takeScreenshot(id: 'w'), isNull);
+    });
+
+    test('S6: non-list data raises malformed_response', () async {
+      port = IosWebviewPort(channel: scripted(payload: {'data': 'oops'}));
+      await expectLater(
+        port.takeScreenshot(id: 'w'),
+        throwsA(isA<IosWebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+    });
+
+    test('S6: exportPdf rides its own method name', () async {
+      port = IosWebviewPort(channel: scripted(payload: {
+        'data': [9, 8, 7],
+      }));
+      expect(await port.exportPdf(id: 'w'), [9, 8, 7]);
+      expect(lastMethod, 'exportPdf');
+      expect(lastArgs['id'], 'w');
+    });
+  });
 }

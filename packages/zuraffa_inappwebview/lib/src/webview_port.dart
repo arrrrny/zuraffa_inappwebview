@@ -40,6 +40,17 @@ abstract class WebviewPort {
   /// The serialized HTML of the main frame's current document.
   Future<String?> getHtml({required String id});
 
+  /// Captures the rendered page as image bytes (null when the platform
+  /// could not capture). Channel: `takeScreenshot`, response key `data`.
+  Future<List<int>?> takeScreenshot({
+    required String id,
+    ScreenshotConfiguration? config,
+  });
+
+  /// Exports the rendered page as PDF bytes (null on failure).
+  /// Channel: `exportPdf`, response key `data`.
+  Future<List<int>?> exportPdf({required String id});
+
   /// Stores [cookie] in the webview's shared cookie store.
   Future<void> setCookie(WebviewCookie cookie);
 
