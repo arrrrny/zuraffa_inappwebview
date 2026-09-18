@@ -1,6 +1,11 @@
 /// Portable sessions (spec 009): save/restore a headless webview's
 /// session state (cookies + localStorage) through a store port — the
 /// package never introduces its own storage format.
+///
+/// The stored payload is plaintext: cookie values and localStorage
+/// entries are persisted exactly as the page set them, with no
+/// encryption or redaction (an opt-out/encryption layer is a documented
+/// follow-up). Back the store with an appropriately protected backend.
 library;
 
 import 'dart:convert';
@@ -34,8 +39,11 @@ class PortableSession {
         'savedAtMs': savedAt.millisecondsSinceEpoch,
       };
 
-  static PortableSession fromJson(Map<String, Object?> json) =>
-      PortableSession(
+  /// Decodes a stored payload. A missing or foreign shape fails typed
+  /// (`malformed_response`) instead of escaping as an untyped `TypeError`.
+  static PortableSession fromJson(Map<String, Object?> json) {
+    try {
+      return PortableSession(
         name: json['name'] as String,
         origin: json['origin'] as String? ?? '',
         cookies: [
@@ -49,13 +57,24 @@ class PortableSession {
             ? DateTime.fromMillisecondsSinceEpoch(json['savedAtMs'] as int)
             : null,
       );
+    } on Object catch (error) {
+      throw WebviewException(
+        'malformed_response',
+        'The portable session payload could not be decoded: $error',
+        recoverable: false,
+      );
+    }
+  }
 }
 
 /// The only persistence path for portable sessions (spec 009 FR-2/FR-5):
 /// implemented by the zuraffa session package or any store backend.
+/// Every method is asynchronous so a real backend (file, keychain,
+/// secure storage, remote) can be implemented without keeping the whole
+/// store resident in memory.
 abstract class WebviewSessionStore {
   Future<void> save(PortableSession session);
-  PortableSession? read(String name);
+  Future<PortableSession?> read(String name);
   Future<void> delete(String name);
   Future<List<String>> list();
 }
@@ -107,7 +126,7 @@ class WebViewSessions {
     required String webviewId,
     required String name,
   }) async {
-    final session = store.read(name);
+    final session = await store.read(name);
     if (session == null) {
       throw WebviewException(
         'session_not_found',
@@ -119,10 +138,12 @@ class WebViewSessions {
       await service.setCookie(cookie);
     }
     for (final entry in session.localStorage.entries) {
+      // JSON string literals are valid JS literals: keys/values coming
+      // from the page cannot break out of the literal.
       await service.evaluateJavascript(
         id: webviewId,
-        source:
-            "window.localStorage.setItem('${_escape(entry.key)}', '${_escape(entry.value)}')",
+        source: 'window.localStorage.setItem('
+            '${jsonEncode(entry.key)}, ${jsonEncode(entry.value)})',
       );
     }
   }
@@ -132,6 +153,4 @@ class WebViewSessions {
 
   /// The stored session names.
   Future<List<String>> list() => store.list();
-
-  static String _escape(String raw) => raw.replaceAll("'", r"\'");
 }

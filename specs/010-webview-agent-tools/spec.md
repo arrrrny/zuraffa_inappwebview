@@ -65,9 +65,11 @@ tool layer (one mission, one webview).
 ### User Story 3 - Read, capture, clean, release (Priority: P2)
 
 `read_cookies {url}` returns the cookie list (name/value/domain).
-`screenshot {session}` returns an **artifact reference** plus
-`byteLength` — never the byte body over the tool boundary (size
-discipline, zuraffa#384). `dismiss_dialogues {session}` applies the
+`screenshot {session}` returns an **artifact reference** when the host
+wires an `artifactSink` (the ref-only pattern, zuraffa#384 size
+discipline) and otherwise returns the capture bytes to the caller —
+a ref that nothing can resolve teaches the agent nothing.
+`dismiss_dialogues {session}` applies the
 canonical 002 script. `release_session {session}` returns the instance to
 the pool.
 
@@ -76,8 +78,9 @@ the pool.
 1. **Given** stored cookies, **When** `read_cookies` runs, **Then** the
    data carries them as maps.
 2. **Given** a capture-capable webview, **When** `screenshot` runs,
-   **Then** the result has an `artifactRef` and `byteLength`, and no byte
-   array in the payload.
+   **Then** the payload carries no byte array in `data`, and either the
+   configured sink's `artifactRef` (plus `byteLength`) or the base64 bytes
+   in `text`.
 3. **Given** a session with overlays, **When** `dismiss_dialogues` runs,
    **Then** the canonical script was evaluated on the session's webview.
 4. **Given** an active session, **When** `release_session` runs, **Then**
@@ -91,13 +94,14 @@ the pool.
 - **FR-2**: Six tools with the arg shapes above; every `call` validates defensively (untrusted input) and returns `McpToolResult` — never throws.
 - **FR-3**: Typed `WebviewException`s degrade to `isError` results carrying code + message.
 - **FR-4**: Session continuity via `WebviewPool.acquire(session, domainHint)`; `release_session` maps to `pool.release`.
-- **FR-5**: `screenshot` returns `artifactRef` + `byteLength` only.
+- **FR-5**: `screenshot` never puts the byte body in `data` (or in `artifactRef`) when an `artifactSink` is configured — the result carries the sink's `artifactRef` + `byteLength`. Without a sink it returns the bytes to the caller instead of a ref that resolves to nothing.
+- **FR-6**: Session-addressed tools refuse a session the pool does not hold, with the typed `session_not_started` code.
 
 ## Success Criteria
 
 - SC-1: A mission's tool sequence operates on one webview.
 - SC-2: No tool call ever throws across the MCP boundary.
-- SC-3: Large payloads (screenshots) travel by reference.
+- SC-3: Large payloads (screenshots) travel by reference when the host wires an `artifactSink`; otherwise they come back to the caller rather than into an unresolvable ref.
 
 ## Assumptions
 

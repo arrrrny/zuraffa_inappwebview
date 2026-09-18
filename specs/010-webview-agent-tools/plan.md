@@ -8,7 +8,8 @@
 `McpTool`s (`browse`, `execute_js`, `read_cookies`, `screenshot`,
 `dismiss_dialogues`, `release_session`). Session continuity via the pool;
 defensive validation; typed failures degrade to `isError` results;
-screenshots travel by artifactRef.
+screenshots travel by artifactRef when the host wires a sink, or come
+back to the caller otherwise.
 
 ## Project Structure
 

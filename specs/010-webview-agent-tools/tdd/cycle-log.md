@@ -31,6 +31,26 @@ zuraffa-core `McpTool`s (the public runtime tier from
 
 `dart test` → 18 · 18 · 18 · 6 · 87 = **147/147 green**, analyze clean.
 
+## Cycle 2 — review fix (PR #9 review)
+
+- Tool payloads moved into `text`. `McpToolResult.toJson` serialises only
+  `isError`/`text`/`artifactRef`, so the evaluated JS value, the cookie
+  maps and every `webviewId` — all parked in `data` — were dropped on the
+  wire.
+- `screenshot` no longer returns an `artifactRef` (`webview:<id>:screenshot`)
+  that nothing in the package ever writes to: the host may pass a
+  `ScreenshotArtifactSink` for a real ref, and without one the bytes come
+  back to the caller. Emitting the body inside `artifactRef` is not an
+  option — `mcp_tool.dart` requires the body to stay off the transport.
+- New `session_not_started` guard (via `WebviewPool.hasSession`) on
+  `execute_js`/`screenshot`/`dismiss_dialogues`/`release_session`: a
+  typo'd or already-released session used to succeed against a freshly
+  created `about:blank` instance.
+- `read_cookies` validates its `url` like every other tool, and its
+  description now states that cookie values are returned verbatim.
+- A1 pins each tool's `properties`/`required` instead of comparing two
+  calls of identical code.
+
 ## Notes
 
 - Search-engine degradation heuristics and mission-cancellation salvage

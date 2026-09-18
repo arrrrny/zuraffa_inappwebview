@@ -5,7 +5,7 @@ import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
 
 WebviewNavigationEvent _completed(String url) =>
     WebviewNavigationEvent.fromChannelArgs(
-        {'type': 'completed', 'url': url});
+        {'type': 'completed', 'url': url})!;
 
 WebviewCaptureEntry _capture(String url) =>
     WebviewCaptureEntry.fromChannelArgs(
@@ -16,7 +16,15 @@ void main() {
     test('V1: navigations -> ordered entries with html + cookie snapshots',
         () async {
       final port = _VcrFakePort();
-      port.htmlFor = ({required String id}) async => '<html>a</html>';
+      // The first snapshot is slow, so the second navigation genuinely
+      // overlaps it — the ordering assertion can actually fail.
+      var calls = 0;
+      port.htmlFor = ({required String id}) async {
+        if (calls++ == 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+        return '<html>a</html>';
+      };
       port.cookiesFor = ({required String url}) async =>
           [const WebviewCookie(name: 'sid', value: '1')];
       final service = WebviewService(port: port);
@@ -29,14 +37,15 @@ void main() {
 
       cap.add(_capture('https://x.dev/api'));
       nav.add(_completed('https://x.dev/a'));
-      await Future<void>.delayed(Duration.zero);
       nav.add(_completed('https://x.dev/b'));
-      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
 
       final cassette = await recorder.stop();
       expect(cassette.formatVersion, 1);
-      expect(cassette.entries, hasLength(2));
-      expect(cassette.entries.first.url, 'https://x.dev/a');
+      expect(
+        cassette.entries.map((e) => e.url),
+        ['https://x.dev/a', 'https://x.dev/b'],
+      );
       expect(cassette.entries.first.html, '<html>a</html>');
       expect(
         cassette.entries.first.cookies.single.name,
@@ -45,9 +54,28 @@ void main() {
       // captures observed before a navigation attach to that navigation
       expect(cassette.entries.first.captures, hasLength(1));
       expect(cassette.entries.last.captures, isEmpty);
+      expect(recorder.errors, isEmpty);
 
       await nav.close();
       await cap.close();
+    });
+
+    test('V1: stop() drains an in-flight ingestion', () async {
+      final port = _VcrFakePort();
+      port.htmlFor = ({required String id}) async {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        return '<html>a</html>';
+      };
+      final service = WebviewService(port: port);
+      await service.createHeadless(id: 'w');
+      final nav = StreamController<WebviewNavigationEvent>();
+      final recorder = VcrRecorder(service: service, webviewId: 'w')
+        ..record(navigationEvents: nav.stream, captureEvents: const Stream.empty());
+
+      nav.add(_completed('https://x.dev/a'));
+      final cassette = await recorder.stop();
+      expect(cassette.entries.map((e) => e.url), ['https://x.dev/a']);
+      await nav.close();
     });
 
     test('V2: cassette JSON round-trip preserves entries', () {
@@ -65,6 +93,29 @@ void main() {
       expect(back.entries.single.html, '<html/>');
       expect(back.entries.single.cookies.single.name, 'sid');
       expect(back.entries.single.captures.single.url, 'https://x.dev/api');
+    });
+
+    test('V2: an unsupported formatVersion fails typed', () {
+      expect(
+        () => Cassette.fromJson(const {
+          'formatVersion': 2,
+          'entries': <Object?>[],
+        }),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'cassette_version')),
+      );
+    });
+
+    test('V2: a malformed cassette payload fails typed, not as a TypeError',
+        () {
+      expect(
+        () => Cassette.fromJson(const {
+          'formatVersion': 1,
+          'entries': [1, 2],
+        }),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
     });
 
     test('V2: recorded captures are defensively redacted', () async {
@@ -88,6 +139,47 @@ void main() {
         e.captures.single.requestHeaders['Authorization'],
         '<redacted>',
       );
+    });
+
+    test('V9: stream errors are captured instead of escaping', () async {
+      final port = _VcrFakePort();
+      final service = WebviewService(port: port);
+      await service.createHeadless(id: 'w');
+      final nav = StreamController<WebviewNavigationEvent>();
+      final cap = StreamController<WebviewCaptureEntry>();
+      final recorder = VcrRecorder(service: service, webviewId: 'w')
+        ..record(navigationEvents: nav.stream, captureEvents: cap.stream);
+
+      nav.addError(const WebviewException(
+        'channel_not_wired',
+        'no event source',
+        recoverable: false,
+      ));
+      cap.addError(StateError('boom'));
+      await Future<void>.delayed(Duration.zero);
+      expect(recorder.errors, hasLength(2));
+
+      await nav.close();
+      await cap.close();
+    });
+
+    test('V9: an ingest failure is captured, not thrown', () async {
+      final port = _VcrFakePort()
+        ..htmlFor = ({required String id}) async => throw StateError('gone');
+      final service = WebviewService(port: port);
+      await service.createHeadless(id: 'w');
+      final nav = StreamController<WebviewNavigationEvent>();
+      final recorder = VcrRecorder(service: service, webviewId: 'w')
+        ..record(
+            navigationEvents: nav.stream,
+            captureEvents: const Stream.empty());
+
+      nav.add(_completed('https://x.dev/a'));
+      await Future<void>.delayed(Duration.zero);
+      final cassette = await recorder.stop();
+      expect(cassette.entries, isEmpty);
+      expect(recorder.errors, hasLength(1));
+      await nav.close();
     });
   });
 
@@ -191,6 +283,17 @@ void main() {
         'https://x.dev/api/2',
       ]);
       await sub.cancel();
+    });
+
+    test('V10: dispose closes captureEvents', () async {
+      final replayer = VcrReplayer(
+        cassette: cassette,
+        service: service,
+        webviewId: 'w',
+      );
+      final done = expectLater(replayer.captureEvents, emitsDone);
+      await replayer.dispose();
+      await done;
     });
   });
 }

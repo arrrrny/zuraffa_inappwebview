@@ -20,6 +20,7 @@ before implementation and the GREEN totals (116/116 repo-wide).
 | US3-2 pool_exhausted | P5b |
 | US3-3 TTL sweep | P6 |
 | US4-1 disposeAll zero-state | P7 |
+| FR-6 maxPerDomain | P8a–P8d |
 
 ## Mutants (reasoned)
 
@@ -31,8 +32,8 @@ before implementation and the GREEN totals (116/116 repo-wide).
 
 ## Gaps (non-blocking)
 
-- maxPerDomain's dedicated eviction path is implemented (FR-6) but not
-  separately pinned by a test — it shares the `_idlest` machinery proven
-  by P5a; a dedicated scenario is a cheap follow-up.
+- maxPerDomain's dedicated path (FR-6) is pinned by P8a–P8d: idle
+  same-domain reuse, cap overflow → `pool_exhausted`, release frees a
+  slot, and another domain is unaffected.
 - Memory-pressure lifecycle listeners defer to the app shell (spec
   Assumptions).

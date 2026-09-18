@@ -3,6 +3,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'navigation_tracking.dart';
 import 'webview_service.dart';
@@ -150,12 +151,14 @@ class WebviewServiceRecipeDriver implements RecipeDriver {
         url: WebviewUri(url.toString()),
       );
 
+  /// The selector is encoded as a JS string literal (`jsonEncode` escapes
+  /// quotes, backslashes and newlines alike), and a missing element is
+  /// reported as `false` instead of calling `null()`.
   @override
   Future<void> tap(String selector) => service.evaluateJavascript(
         id: webviewId,
-        source:
-            "(document.querySelector(${_quote(selector)}) ?? {click: null}).click()",
+        source: '(() => { const el = document.querySelector('
+            '${jsonEncode(selector)});'
+            ' if (!el) return false; el.click(); return true; })()',
       );
-
-  static String _quote(String raw) => "'${raw.replaceAll("'", r"\'")}'";
 }

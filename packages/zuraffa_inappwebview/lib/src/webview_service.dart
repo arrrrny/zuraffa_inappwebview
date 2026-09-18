@@ -127,9 +127,10 @@ class WebviewService {
           id: id,
           source: DialogueDismissScript.source,
         );
-      } on Exception {
+      } on Object {
         // FR-5: dismissal is best-effort — a page-level JS failure must not
-        // propagate.
+        // propagate. `Error`s (StateError/TypeError from a mis-wired port)
+        // count too, not just `Exception`s.
       }
     }
   }

@@ -61,15 +61,20 @@ class WebviewCaptureFilter {
 
 /// Bounded retention policy applied at ingestion (spec 005 FR-3):
 /// [maxEntries] keeps the latest entries when exceeded; [maxBodyBytes]
-/// truncates string bodies.
+/// truncates string bodies (measured in UTF-16 code units; a truncation
+/// never splits a surrogate pair).
+///
+/// Both are clamped to zero, so a negative value cannot reach the ingest
+/// listener and blow up as a `RangeError`.
 class CaptureBudget {
   final int maxEntries;
   final int maxBodyBytes;
 
   const CaptureBudget({
-    this.maxEntries = 500,
-    this.maxBodyBytes = 50 * 1024,
-  });
+    int maxEntries = 500,
+    int maxBodyBytes = 50 * 1024,
+  })  : maxEntries = maxEntries < 0 ? 0 : maxEntries,
+        maxBodyBytes = maxBodyBytes < 0 ? 0 : maxBodyBytes;
 }
 
 /// Marker substituted for any redacted secret value (zikzak A15).
@@ -121,6 +126,12 @@ class CaptureSecretRedactor {
   /// Redacts auth-shaped query parameters, preserving structure and
   /// non-secret params. Rebuilt as a raw string so the marker is not
   /// percent-encoded by Uri canonicalization.
+  ///
+  /// The raw key is not valid percent-encoding as often as not (a literal
+  /// non-ASCII key, `?100%=x`, `%FF`), and decoding it throws — which,
+  /// from inside a stream listener, is an unhandled async error rather
+  /// than anything a caller can see. An undecodable key is therefore
+  /// matched verbatim.
   String redactUrl(String url) {
     final q = url.indexOf('?');
     if (q == -1) return url;
@@ -132,14 +143,25 @@ class CaptureSecretRedactor {
         kept.add(part);
         continue;
       }
-      final key = Uri.decodeQueryComponent(part.substring(0, eq));
+      final rawKey = part.substring(0, eq);
+      final key = _decodeQueryKey(rawKey);
       kept.add(
         _redactedParamKeys.contains(key.toLowerCase())
-            ? '$key=$kRedactionMarker'
+            ? '$rawKey=$kRedactionMarker'
             : part,
       );
     }
     return '$base?${kept.join('&')}';
+  }
+
+  static String _decodeQueryKey(String rawKey) {
+    try {
+      return Uri.decodeQueryComponent(rawKey);
+    } on FormatException {
+      return rawKey;
+    } on ArgumentError {
+      return rawKey;
+    }
   }
 }
 
@@ -153,6 +175,7 @@ class NetworkCaptureManager {
 
   final Map<String, List<WebviewCaptureEntry>> _entries = {};
   final Map<String, StreamSubscription<WebviewCaptureEntry>> _subs = {};
+  final Map<String, Object> _errors = {};
 
   NetworkCaptureManager({
     this.budget = const CaptureBudget(),
@@ -161,14 +184,34 @@ class NetworkCaptureManager {
 
   /// Records entries from [events] under [id], replacing any previous
   /// subscription. Cancel with [detach].
+  ///
+  /// The adapter streams are *specified* to carry typed errors
+  /// (`channel_not_wired`, `malformed_response`); without a handler those
+  /// become unhandled async errors, so one is installed and the last
+  /// error is readable via [error].
   void attach(String id, Stream<WebviewCaptureEntry> events) {
     _subs[id]?.cancel();
-    _subs[id] = events.listen((e) => ingest(id, e));
+    _errors.remove(id);
+    _subs[id] = events.listen(
+      (e) => ingest(id, e),
+      onError: (Object error, StackTrace _) => _errors[id] = error,
+    );
   }
+
+  /// The last stream error observed for [id], if any.
+  Object? error(String id) => _errors[id];
 
   /// Stops recording for [id] (keeps the buffered entries).
   void detach(String id) {
     _subs.remove(id)?.cancel();
+  }
+
+  /// Cancels every subscription (call when the manager is done).
+  void dispose() {
+    for (final sub in _subs.values) {
+      sub.cancel();
+    }
+    _subs.clear();
   }
 
   /// Ingests one entry: redact (by default) then enforce the budget.
@@ -177,19 +220,32 @@ class NetworkCaptureManager {
     var e = redactAuth ? _redactor.redact(entry) : entry;
     if (e.requestBody != null &&
         e.requestBody!.length > budget.maxBodyBytes) {
-      e = _copyWith(e, requestBody: e.requestBody!.substring(0, budget.maxBodyBytes));
+      e = _copyWith(
+        e,
+        requestBody: _truncate(e.requestBody!, budget.maxBodyBytes),
+      );
     }
     if (e.responseBody != null &&
         e.responseBody!.length > budget.maxBodyBytes) {
       e = _copyWith(
         e,
-        responseBody: e.responseBody!.substring(0, budget.maxBodyBytes),
+        responseBody: _truncate(e.responseBody!, budget.maxBodyBytes),
       );
     }
     buffered.add(e);
     if (buffered.length > budget.maxEntries) {
       buffered.removeRange(0, buffered.length - budget.maxEntries);
     }
+  }
+
+  /// Cuts [body] to at most [maxUnits] UTF-16 code units without splitting
+  /// a surrogate pair in half (which would leave a lone surrogate behind).
+  static String _truncate(String body, int maxUnits) {
+    var end = maxUnits;
+    if (end <= 0) return '';
+    final unit = body.codeUnitAt(end - 1);
+    if (unit >= 0xD800 && unit <= 0xDBFF) end -= 1;
+    return body.substring(0, end);
   }
 
   /// The buffered entries for [id] in ingestion order (unmodifiable).

@@ -7,8 +7,9 @@
 | A3 | session continuity: execute_js same webviewId, one create | T003 | DONE |
 | A4 | typed failure → isError (no throw); missing arg → isError | T004 | DONE |
 | A5 | read_cookies returns cookie maps | T005 | DONE |
-| A6 | screenshot → artifactRef + byteLength, no byte body | T005 | DONE |
+| A6 | screenshot: bytes to the caller without a sink (never a byte array in `data`); sink ref + byteLength with one | T005 | DONE |
 | A7 | dismiss_dialogues applies the canonical 002 script | T005 | DONE |
 | A8 | release_session empties the session list | T005 | DONE |
+| A9 | unknown/released session → typed `session_not_started`, no instance created | T007 | DONE |
 
-Counts: 8 behaviors, 8 driven red → green, 0 remaining.
+Counts: 9 behaviors, 9 driven red → green, 0 remaining.

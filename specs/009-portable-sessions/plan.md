@@ -22,7 +22,7 @@ app: lib/src/portable_sessions.dart     # NEW
 | Piece | Shape |
 |---|---|
 | PortableSession | name, origin, cookies[], localStorage{}, savedAt |
-| store port | save/read/delete/list (sync read for not-found semantics) |
+| store port | save/read/delete/list — all async, so a real backend stays out of memory |
 | save | getCookies(origin) + `JSON.stringify(window.localStorage)` eval |
 | load | setCookie × n + `localStorage.setItem(k, v)` evals |
 

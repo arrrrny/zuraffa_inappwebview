@@ -22,7 +22,7 @@ without weakening the recorded behavior.
 | US2-3 path-prefix fallback | V4 |
 | US3-1 strict vcr_unmatched | V5 |
 | US3-2 soft mode | V5 |
-| US4-1 loadHtml adapter args | V7a/b/c |
+| US4-1 loadHtml adapter args | V7 |
 
 ## Mutants (reasoned)
 

@@ -10,5 +10,16 @@
 | P5b | saturated (all active) → typed pool_exhausted | T005 | DONE |
 | P6 | idleTtl sweep disposes stale idles (injected clock) | T006 | DONE |
 | P7 | disposeAll → zero instances, service registry empty | T007 | DONE |
+| P8a | an idle same-domain instance is reused, not capped out | T009 | DONE |
+| P8b | a third live instance on one domain → typed `pool_exhausted` with free maxLive slots | T009 | DONE |
+| P8c | releasing one session frees a per-domain slot | T009 | DONE |
+| P8d | another domain is unaffected by the cap | T009 | DONE |
+| P9 | overlapping acquires for one session create exactly one instance | T010 | DONE |
+| P10 | overlapping acquires cannot overshoot `maxLive` | T010 | DONE |
+| P11 | a `runHeadless` failure disposes the created webview (no leak) | T010 | DONE |
+| P12 | `release` on an unknown session is a no-op | T002 | DONE |
+| P13 | `hasSession` tracks acquire/release | T010 | DONE |
 
-Counts: 8 behaviors, 8 driven red → green, 0 remaining.
+Counts: 17 behaviors, 17 DONE, 0 remaining. (`P3` now also asserts the
+`about:blank` reset on warm reuse; P8a–P8d, P9–P13 were appended in the
+fixes round.)

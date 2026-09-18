@@ -25,8 +25,19 @@ red).
 
 `dart test` → 18 · 18 · 18 · 6 · 78 = **138/138 green**, analyze clean.
 
+## Cycle 2 — review fix (PR #9 review)
+
+- The store `read` became **async** (`Future<PortableSession?> read`): a
+  synchronous read forces every real backend (file, keychain, secure
+  storage, remote) to block the isolate or keep the whole store resident.
+  Not-found is still checked before anything is applied (FR-4).
+- `localStorage` keys/values are now spliced into JS with `jsonEncode`
+  instead of a `'`-only escaper: a value containing a newline (pasted
+  text, pretty-printed JSON — routine in `localStorage`) used to produce a
+  `SyntaxError` mid-restore, after cookies and earlier keys were applied.
+- `PortableSession.fromJson` now fails typed (`malformed_response`) on a
+  foreign payload instead of throwing a raw `TypeError`.
+
 ## Notes
 
-- The store `read` is synchronous by design: not-found is a decision, not
-  an I/O race (spec FR-4 — check before applying anything).
 - Per-instance isolated stores (zikzak #253) remain nice-to-have.

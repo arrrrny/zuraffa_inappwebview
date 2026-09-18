@@ -132,6 +132,19 @@ void main() {
       expect(source, contains('fixed'));
       expect(source, contains('sticky'));
       expect(source, contains('.remove()'));
+      // The exact condition is pinned: a substring test alone would accept
+      // a no-op dismisser (`pos === "fixed" && pos === "sticky"`).
+      expect(source, contains("pos === 'fixed' || pos === 'sticky'"));
+    });
+
+    test('D3b: the document roots are never removed', () {
+      expect(
+        source,
+        contains(
+          'if (el === document.documentElement || el === document.body) '
+          'continue;',
+        ),
+      );
     });
 
     test('D4: resets overflow/margin on documentElement and body', () {
@@ -183,6 +196,14 @@ void main() {
             'boom',
             recoverable: true,
           );
+      await service.dismissDialogues(id: 'scraper');
+      expect(port.evaluated, hasLength(1));
+    });
+
+    test('D9: non-Exception errors are swallowed as well', () async {
+      // A mis-wired port throws Error subclasses (StateError/TypeError),
+      // which the previous `on Exception` guard let through.
+      port.evaluateHook = (_) => throw StateError('mis-wired port');
       await service.dismissDialogues(id: 'scraper');
       expect(port.evaluated, hasLength(1));
     });

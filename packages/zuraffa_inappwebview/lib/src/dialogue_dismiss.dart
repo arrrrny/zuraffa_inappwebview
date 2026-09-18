@@ -23,6 +23,7 @@ class DialogueDismissScript {
     var all = document.querySelectorAll('*');
     for (var i = 0; i < all.length; i++) {
       var el = all[i];
+      if (el === document.documentElement || el === document.body) continue;
       var pos = window.getComputedStyle(el).position;
       if (pos === 'fixed' || pos === 'sticky') {
         el.remove();

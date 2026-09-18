@@ -49,7 +49,8 @@ export 'src/session_recipes.dart'
         replay;
 export 'src/vcr_record_replay.dart'
     show Cassette, CassetteEntry, VcrRecorder, VcrReplayer;
-export 'src/webview_agent_tools.dart' show WebviewAgentTools;
+export 'src/webview_agent_tools.dart'
+    show ScreenshotArtifactSink, WebviewAgentTools;
 export 'src/webview_types.dart'
     show
         ScreenshotConfiguration,

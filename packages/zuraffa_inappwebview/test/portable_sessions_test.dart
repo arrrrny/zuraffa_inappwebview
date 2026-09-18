@@ -24,7 +24,7 @@ void main() {
       await sessions.save(webviewId: 'w', name: 'shop', origin: 'https://x.dev');
 
       expect(port.evaluatedSources, contains(contains('JSON.stringify')));
-      final saved = store.read('shop');
+      final saved = await store.read('shop');
       expect(saved, isNotNull);
       expect(saved!.origin, 'https://x.dev');
       expect(saved.cookies.single.name, 'sid');
@@ -83,7 +83,25 @@ void main() {
       expect(await store.list(), ['shop']);
       await sessions.delete(name: 'shop');
       expect(await store.list(), isEmpty);
-      expect(store.read('shop'), isNull);
+      expect(await store.read('shop'), isNull);
+    });
+
+    test('PS5: a foreign payload fails typed, not as a TypeError', () {
+      expect(
+        () => PortableSession.fromJson(const {'name': 42}),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+      expect(
+        () => PortableSession.fromJson(const {
+          'name': 'shop',
+          'cookies': [
+            {'value': 'x'},
+          ],
+        }),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
     });
   });
 }
@@ -98,7 +116,7 @@ class MemorySessionStore implements WebviewSessionStore {
       _byName[session.name] = session;
 
   @override
-  PortableSession? read(String name) => _byName[name];
+  Future<PortableSession?> read(String name) async => _byName[name];
 
   @override
   Future<void> delete(String name) async => _byName.remove(name);

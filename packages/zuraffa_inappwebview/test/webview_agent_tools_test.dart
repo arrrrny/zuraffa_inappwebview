@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:test/test.dart';
 import 'package:zuraffa/zuraffa.dart' show McpTool;
 import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
@@ -21,8 +23,7 @@ void main() {
       });
 
   group('US1 — suite', () {
-    test('A1: six tools, named, described, object schemas; idempotent',
-        () {
+    test('A1: six tools, named, described, with the documented schemas', () {
       expect(tools.map((t) => t.name), [
         'browse',
         'execute_js',
@@ -31,13 +32,25 @@ void main() {
         'dismiss_dialogues',
         'release_session',
       ]);
+      // Pinned per tool: a copy-paste drift (a handler reading an argument
+      // its schema does not declare) must fail here, not at agent runtime.
+      const expected = {
+        'browse': ['session', 'url'],
+        'execute_js': ['session', 'source'],
+        'read_cookies': ['url'],
+        'screenshot': ['session'],
+        'dismiss_dialogues': ['session'],
+        'release_session': ['session'],
+      };
       for (final t in tools) {
         expect(t.description, isNotEmpty);
         expect(t.inputSchema['type'], 'object');
+        expect(
+          (t.inputSchema['properties'] as Map).keys.toList(),
+          expected[t.name],
+        );
+        expect(t.inputSchema['required'], expected[t.name]);
       }
-      final again =
-          WebviewAgentTools(service: service, pool: pool).buildTools();
-      expect(again.map((t) => t.name), tools.map((t) => t.name));
     });
   });
 
@@ -49,18 +62,22 @@ void main() {
       expect(result.isError, isFalse);
       expect(port.loadedUrls, contains('https://x.dev/a'));
       expect(result.data?['webviewId'], isNotNull);
+      expect(result.text, contains('webviewId'));
     });
 
-    test('A3: execute_js reuses the same pooled webview for the session',
+    test('A3: execute_js reuses the same pooled webview and reports the value',
         () async {
       final first = await tool('browse')
           .call({'session': 's1', 'url': 'https://x.dev/a'});
+      port.evaluateResult = 'the-title';
       final second = await tool('execute_js')
           .call({'session': 's1', 'source': 'document.title'});
       expect(second.isError, isFalse);
       expect(second.data?['webviewId'], first.data?['webviewId']);
       expect(port.evaluatedSources, contains('document.title'));
       expect(port.creates, 1);
+      // The payload must ride `text`: `data` is not serialised on the wire.
+      expect(second.text, contains('the-title'));
     });
 
     test('A4: typed failure degrades to isError result (no throw)',
@@ -71,6 +88,15 @@ void main() {
       expect(result.text, contains('unsupported_scheme'));
     });
 
+    test('A4: an untyped port failure degrades to tool_failed', () async {
+      await tool('browse').call({'session': 's1', 'url': 'https://x.dev/a'});
+      port.failEvaluate = StateError('boom');
+      final result = await tool('execute_js')
+          .call({'session': 's1', 'source': '1+1'});
+      expect(result.isError, isTrue);
+      expect(result.text, contains('webview.tool_failed'));
+    });
+
     test('A4: missing argument -> isError with a clear message', () async {
       final result = await tool('browse').call({'session': 's1'});
       expect(result.isError, isTrue);
@@ -79,7 +105,7 @@ void main() {
   });
 
   group('US3 — read, capture, clean, release', () {
-    test('A5: read_cookies returns the cookie list', () async {
+    test('A5: read_cookies returns the list in data *and* text', () async {
       port.cookiesFor = ({required String url}) async =>
           [const WebviewCookie(name: 'sid', value: '1')];
       final result = await tool('read_cookies')
@@ -87,9 +113,19 @@ void main() {
       expect(result.isError, isFalse);
       final cookies = result.data?['cookies'] as List;
       expect(cookies.single['name'], 'sid');
+      expect(result.text, contains('sid'));
+      expect(result.text, contains('1'));
     });
 
-    test('A6: screenshot returns artifactRef + byteLength, no body',
+    test('A5: read_cookies validates the url like every other tool',
+        () async {
+      final result =
+          await tool('read_cookies').call({'url': 'file:///etc/passwd'});
+      expect(result.isError, isTrue);
+      expect(result.text, contains('unsupported_scheme'));
+    });
+
+    test('A6: screenshot returns the bytes to the caller without a sink',
         () async {
       await tool('browse')
           .call({'session': 's1', 'url': 'https://x.dev/a'});
@@ -98,8 +134,41 @@ void main() {
           await tool('screenshot').call({'session': 's1'});
       expect(result.isError, isFalse);
       expect(result.data?['byteLength'], 4);
-      expect(result.artifactRef, isNotNull);
+      // No sink: no unresolvable ref, and the bytes reach the caller.
+      expect(result.artifactRef, isNull);
+      expect(result.text, contains(base64Encode([1, 2, 3, 4])));
       expect(result.data?.containsKey('bytes'), isFalse);
+      // The format reaches the platform instead of relying on the default.
+      expect(port.screenshotConfigs.single?.format, ScreenshotFormat.png);
+    });
+
+    test('A6: a host artifact sink keeps the body off the wire', () async {
+      final sinkTools = WebviewAgentTools(
+        service: service,
+        pool: pool,
+        artifactSink: (webviewId, bytes) async {
+          expect(bytes, [1, 2, 3, 4]);
+          return 'file:///tmp/$webviewId.png';
+        },
+      ).buildTools();
+      final screenshot =
+          sinkTools.firstWhere((t) => t.name == 'screenshot');
+      await tool('browse').call({'session': 's1', 'url': 'https://x.dev/a'});
+      port.screenshotBytes = [1, 2, 3, 4];
+      final result = await screenshot.call({'session': 's1'});
+      expect(result.isError, isFalse);
+      expect(result.artifactRef, startsWith('file:///tmp/'));
+      expect(result.text, isNot(contains(base64Encode([1, 2, 3, 4]))));
+      expect(result.data?['byteLength'], 4);
+    });
+
+    test('A6: no bytes -> typed capture_failed', () async {
+      await tool('browse')
+          .call({'session': 's1', 'url': 'https://x.dev/a'});
+      port.screenshotBytes = null;
+      final result = await tool('screenshot').call({'session': 's1'});
+      expect(result.isError, isTrue);
+      expect(result.text, contains('capture_failed'));
     });
 
     test('A7: dismiss_dialogues applies the canonical script', () async {
@@ -112,8 +181,7 @@ void main() {
           contains(contains('getComputedStyle')));
     });
 
-    test('A8: release_session returns the instance to the pool',
-        () async {
+    test('A8: release_session returns the instance to the pool', () async {
       await tool('browse')
           .call({'session': 's1', 'url': 'https://x.dev/a'});
       final result =
@@ -122,13 +190,45 @@ void main() {
       expect(pool.sessions(), isEmpty);
     });
   });
+
+  group('US4 — session guard', () {
+    for (final name in const [
+      'execute_js',
+      'screenshot',
+      'dismiss_dialogues',
+      'release_session',
+    ]) {
+      test('A9: $name refuses a session that was never started', () async {
+        final result = await tool(name).call({
+          'session': 'ghost',
+          if (name == 'execute_js') 'source': '1+1',
+        });
+        expect(result.isError, isTrue);
+        expect(result.text, contains('session_not_started'));
+        expect(port.creates, 0);
+      });
+    }
+
+    test('A9: a released session is no longer addressable', () async {
+      await tool('browse')
+          .call({'session': 's1', 'url': 'https://x.dev/a'});
+      await tool('release_session').call({'session': 's1'});
+      final result =
+          await tool('execute_js').call({'session': 's1', 'source': '1+1'});
+      expect(result.isError, isTrue);
+      expect(result.text, contains('session_not_started'));
+    });
+  });
 }
 
 class _ToolsFakePort implements WebviewPort {
   int creates = 0;
   final List<String> loadedUrls = [];
   final List<String> evaluatedSources = [];
+  final List<ScreenshotConfiguration?> screenshotConfigs = [];
   List<int>? screenshotBytes;
+  Object? evaluateResult;
+  Object? failEvaluate;
   Future<List<WebviewCookie>> Function({required String url})? cookiesFor;
 
   @override
@@ -171,7 +271,9 @@ class _ToolsFakePort implements WebviewPort {
     required String source,
   }) async {
     evaluatedSources.add(source);
-    return null;
+    final failure = failEvaluate;
+    if (failure != null) throw failure;
+    return evaluateResult;
   }
 
   @override
@@ -185,8 +287,10 @@ class _ToolsFakePort implements WebviewPort {
   Future<List<int>?> takeScreenshot({
     required String id,
     ScreenshotConfiguration? config,
-  }) async =>
-      screenshotBytes;
+  }) async {
+    screenshotConfigs.add(config);
+    return screenshotBytes;
+  }
 
   @override
   Future<List<int>?> exportPdf({required String id}) async => null;

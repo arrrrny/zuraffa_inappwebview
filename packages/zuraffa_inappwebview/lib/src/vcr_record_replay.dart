@@ -59,6 +59,11 @@ class CassetteEntry {
 }
 
 /// A versioned, JSON-portable recording of one headless session.
+///
+/// A cassette is plaintext: cookie values, `localStorage` and captured
+/// bodies are stored exactly as recorded (auth-shaped secrets in captures
+/// are redacted, cookies are not). Treat a cassette as sensitive and
+/// persist it somewhere appropriately protected.
 class Cassette {
   static const int currentFormatVersion = 1;
 
@@ -72,14 +77,38 @@ class Cassette {
         'entries': [for (final e in entries) e.toJson()],
       };
 
-  static Cassette fromJson(Map<String, Object?> json) => Cassette(
-        formatVersion:
-            json['formatVersion'] as int? ?? currentFormatVersion,
+  /// Decodes a cassette payload.
+  ///
+  /// The version is *checked*, not copied through: a future v2 cassette
+  /// fails as `cassette_version` instead of being silently replayed under
+  /// v1 rules, and a foreign shape fails as `malformed_response` instead
+  /// of escaping as an untyped `TypeError`.
+  static Cassette fromJson(Map<String, Object?> json) {
+    final version = json['formatVersion'] ?? currentFormatVersion;
+    if (version is! int || version != currentFormatVersion) {
+      throw WebviewException(
+        'cassette_version',
+        'Cassette format version $version is not supported '
+        '(this build reads v$currentFormatVersion).',
+        recoverable: false,
+      );
+    }
+    try {
+      return Cassette(
+        formatVersion: version,
         entries: [
           for (final e in (json['entries'] as List? ?? const []))
             CassetteEntry.fromJson(Map<String, Object?>.from(e as Map)),
         ],
       );
+    } on Object catch (error) {
+      throw WebviewException(
+        'malformed_response',
+        'The cassette payload could not be decoded: $error',
+        recoverable: false,
+      );
+    }
+  }
 }
 
 /// Records a live session into a [Cassette] (spec 008). Watches the
@@ -87,6 +116,14 @@ class Cassette {
 /// navigation freezes an entry with html/cookie snapshots and the
 /// captures observed since the previous navigation. Capture payloads are
 /// defensively re-redacted (the 005 redactor).
+///
+/// Navigations are ingested strictly in order: [ingestNavigation] awaits
+/// two service round-trips before touching the buffers, and redirect
+/// chains emit several completed events in quick succession, so the
+/// ingestions are serialised on an internal chain and [stop] drains it.
+///
+/// One recorder records one session — construct a fresh recorder per
+/// recording rather than calling [record] again after [stop].
 class VcrRecorder {
   final WebviewService service;
   final String webviewId;
@@ -95,16 +132,40 @@ class VcrRecorder {
   final List<CassetteEntry> _entries = [];
   final List<WebviewCaptureEntry> _pendingCaptures = [];
   final List<StreamSubscription> _subs = [];
+  final List<Object> _errors = [];
+  Future<void> _ingestChain = Future<void>.value();
 
   VcrRecorder({required this.service, required this.webviewId});
+
+  /// Errors observed on the watched streams, or raised while ingesting an
+  /// entry. Nothing here is thrown at the caller: a disposed webview or a
+  /// channel hiccup mid-recording captures an error instead of taking
+  /// down the recording (and the process).
+  List<Object> get errors => List.unmodifiable(_errors);
 
   /// Starts watching [navigationEvents] and [captureEvents].
   void record({
     required Stream<WebviewNavigationEvent> navigationEvents,
     required Stream<WebviewCaptureEntry> captureEvents,
   }) {
-    _subs.add(captureEvents.listen(ingestCapture));
-    _subs.add(navigationEvents.listen(ingestNavigation));
+    _subs.add(captureEvents.listen(
+      ingestCapture,
+      onError: (Object error, StackTrace _) => _errors.add(error),
+    ));
+    _subs.add(navigationEvents.listen(
+      (event) {
+        _ingestChain = _ingestChain.then((_) => _ingestSafely(event));
+      },
+      onError: (Object error, StackTrace _) => _errors.add(error),
+    ));
+  }
+
+  Future<void> _ingestSafely(WebviewNavigationEvent event) async {
+    try {
+      await ingestNavigation(event);
+    } on Object catch (error) {
+      _errors.add(error);
+    }
   }
 
   /// Buffers one capture (redacted defensively) for the next entry.
@@ -129,12 +190,14 @@ class VcrRecorder {
     _pendingCaptures.clear();
   }
 
-  /// Stops watching and returns the cassette.
+  /// Stops watching, drains any in-flight ingestion, and returns the
+  /// cassette.
   Future<Cassette> stop() async {
     for (final sub in _subs) {
       await sub.cancel();
     }
     _subs.clear();
+    await _ingestChain;
     return Cassette(entries: List.of(_entries));
   }
 }
@@ -161,6 +224,9 @@ class VcrReplayer {
 
   /// Synthesized capture events for every served entry (broadcast).
   Stream<WebviewCaptureEntry> get captureEvents => _captures.stream;
+
+  /// Closes [captureEvents]; call when the replay is finished.
+  Future<void> dispose() => _captures.close();
 
   /// Serves the best-matching entry for [url] offline.
   Future<void> loadUrl(String url) async {

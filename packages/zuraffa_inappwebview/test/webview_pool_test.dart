@@ -8,6 +8,9 @@ class PoolFakePort implements WebviewPort {
   int creates = 0;
   int runs = 0;
   int disposes = 0;
+  bool failRun = false;
+  bool failCreate = false;
+  final List<String> loadedUrls = [];
 
   @override
   Future<bool> isSupported() async => true;
@@ -16,11 +19,22 @@ class PoolFakePort implements WebviewPort {
   Future<void> createHeadless({
     required String id,
     WebviewSettings settings = const WebviewSettings(),
-  }) async =>
-      creates++;
+  }) async {
+    creates++;
+    if (failCreate) {
+      throw const WebviewException('channel_error', 'create failed',
+          recoverable: false);
+    }
+  }
 
   @override
-  Future<void> runHeadless({required String id}) async => runs++;
+  Future<void> runHeadless({required String id}) async {
+    runs++;
+    if (failRun) {
+      throw const WebviewException('channel_error', 'run failed',
+          recoverable: false);
+    }
+  }
 
   @override
   Future<void> disposeHeadless({required String id}) async => disposes++;
@@ -30,7 +44,8 @@ class PoolFakePort implements WebviewPort {
     required String id,
     required WebviewUri url,
     Map<String, String> headers = const {},
-  }) async {}
+  }) async =>
+      loadedUrls.add(url.toString());
 
   @override
   Future<String?> currentUrl({required String id}) async => null;
@@ -129,13 +144,16 @@ void main() {
   });
 
   group('US2 — domain affinity', () {
-    test('P3: same eTLD+1 idle instance is reused', () async {
+    test('P3: same eTLD+1 idle instance is reused after a reset', () async {
       final pool = WebviewPool(service: service);
       final first = await pool.acquire('s1', domainHint: 'x.dev');
       await pool.release('s1');
+      port.loadedUrls.clear();
       final second = await pool.acquire('s2', domainHint: 'shop.x.dev');
       expect(second, first);
       expect(port.creates, 1);
+      // The previous mission's document must not leak into the new one.
+      expect(port.loadedUrls, ['about:blank']);
     });
 
     test('P4: different domain does not reuse', () async {
@@ -197,6 +215,110 @@ void main() {
       expect(pool.sessions(), isEmpty);
       expect(port.disposes, 2);
       expect(service.created, isEmpty);
+    });
+  });
+
+  group('US3 — per-domain cap', () {
+    test('P8a: an idle same-domain instance is reused, not capped out',
+        () async {
+      final pool = WebviewPool(service: service, maxPerDomain: 2);
+      await pool.acquire('s1', domainHint: 'a.dev');
+      await pool.release('s1');
+      final reused = await pool.acquire('s2', domainHint: 'a.dev');
+      expect(reused, isNotNull);
+      expect(port.creates, 1);
+    });
+
+    test('P8b: a third live instance on one domain -> typed '
+        'pool_exhausted with free maxLive slots', () async {
+      final pool = WebviewPool(service: service, maxPerDomain: 2);
+      await pool.acquire('s1', domainHint: 'a.dev');
+      await pool.acquire('s2', domainHint: 'a.dev');
+      await expectLater(
+        pool.acquire('s3', domainHint: 'a.dev'),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'pool_exhausted')),
+      );
+      expect(pool.liveCount, 2);
+      expect(port.creates, 2);
+    });
+
+    test('P8c: releasing one session frees a per-domain slot', () async {
+      final pool = WebviewPool(service: service, maxPerDomain: 2);
+      await pool.acquire('s1', domainHint: 'a.dev');
+      await pool.acquire('s2', domainHint: 'a.dev');
+      await pool.release('s1');
+      await pool.acquire('s3', domainHint: 'a.dev');
+      expect(pool.sessions(), {'s2', 's3'});
+      expect(port.creates, 2);
+    });
+
+    test('P8d: another domain is unaffected by the cap', () async {
+      final pool = WebviewPool(service: service, maxPerDomain: 2);
+      await pool.acquire('s1', domainHint: 'a.dev');
+      await pool.acquire('s2', domainHint: 'a.dev');
+      await pool.acquire('s3', domainHint: 'b.dev');
+      expect(port.creates, 3);
+    });
+  });
+
+  group('US5 — concurrency + failure cleanup', () {
+    test('P9: overlapping acquires for one session create one instance',
+        () async {
+      final pool = WebviewPool(service: service);
+      final ids = await Future.wait([
+        pool.acquire('s1', domainHint: 'a.dev'),
+        pool.acquire('s1', domainHint: 'a.dev'),
+        pool.acquire('s1', domainHint: 'a.dev'),
+      ]);
+      expect(ids.toSet(), hasLength(1));
+      expect(port.creates, 1);
+      expect(port.runs, 1);
+      expect(pool.liveCount, 1);
+    });
+
+    test('P10: overlapping acquires cannot overshoot maxLive', () async {
+      final pool = WebviewPool(service: service, maxLive: 2);
+      final results = await Future.wait([
+        pool.acquire('s1', domainHint: 'a.dev'),
+        pool.acquire('s2', domainHint: 'b.dev'),
+        pool.acquire('s3', domainHint: 'c.dev'),
+        pool.acquire('s4', domainHint: 'd.dev'),
+      ].map((f) => f.then<Object?>((v) => v, onError: (Object e) => e)));
+      expect(pool.liveCount, 2);
+      expect(results.whereType<WebviewException>(), hasLength(2));
+      expect(port.creates, 2);
+    });
+
+    test('P11: a runHeadless failure disposes the created webview',
+        () async {
+      port.failRun = true;
+      final pool = WebviewPool(service: service);
+      await expectLater(
+        pool.acquire('s1', domainHint: 'a.dev'),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'channel_error')),
+      );
+      expect(pool.liveCount, 0);
+      expect(pool.hasSession('s1'), isFalse);
+      expect(port.disposes, 1);
+      expect(service.created, isEmpty);
+    });
+
+    test('P12: release on an unknown session is a no-op', () async {
+      final pool = WebviewPool(service: service);
+      await pool.release('nope');
+      expect(pool.liveCount, 0);
+      expect(port.disposes, 0);
+    });
+
+    test('P13: hasSession tracks acquire and release', () async {
+      final pool = WebviewPool(service: service);
+      expect(pool.hasSession('s1'), isFalse);
+      await pool.acquire('s1', domainHint: 'a.dev');
+      expect(pool.hasSession('s1'), isTrue);
+      await pool.release('s1');
+      expect(pool.hasSession('s1'), isFalse);
     });
   });
 }
