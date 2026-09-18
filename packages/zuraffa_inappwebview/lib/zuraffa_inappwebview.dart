@@ -32,6 +32,7 @@ export 'src/webview_module.dart'
     show WebviewModule, registerWebview;
 export 'src/webview_port.dart' show WebviewPort;
 export 'src/webview_service.dart' show UnwiredWebviewPort, WebviewService;
+export 'src/webview_pool.dart' show WebviewPool;
 export 'src/webview_types.dart'
     show
         ScreenshotConfiguration,
