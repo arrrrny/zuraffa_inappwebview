@@ -30,3 +30,23 @@ analyze clean.
 ## Refactor while green
 
 None needed.
+
+## Cycle 2 — PR #5 review findings
+
+**RED**: the regression tests for the 11 review findings were written
+against `4db1117` before the fixes. The behavioural set failed 13 tests
+(concurrent acquire double-creates, orphan on failed run, `maxPerDomain`
+unreachable, dispose-order divergence, teardown abort, `hasCycle` on
+`started`+`completed` traffic, `registrableDomain` case/IP collisions,
+fragment leak in `redactUrl`, code-unit body cap, codec `TypeError`). The
+service-side redaction seam (`captureEvents(redact:)`) landed first — a
+new parameter is a compile-level red — so C7's two tests pass from the
+start.
+
+**GREEN**: pool/service/tracker/capture fixes → app **76** (+17), repo
+6·17·17·17·76 = **133/133 green**, analyze clean in all five packages.
+
+Note the ordering trap found on the way: `whenComplete` awaits a *future*
+returned by its callback, so
+`.whenComplete(() => _pending.remove(sessionId))` deadlocks — the removed
+value is the future being completed. The callback must have a void body.

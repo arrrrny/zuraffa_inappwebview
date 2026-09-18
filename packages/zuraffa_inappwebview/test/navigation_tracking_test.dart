@@ -27,6 +27,17 @@ void main() {
       expect(e.isMainFrame, isFalse);
       expect(e.errorCode, 'net_err');
     });
+
+    test('N1: drifted field types decode without throwing', () {
+      final e = WebviewNavigationEvent.fromChannelArgs(const {
+        'type': 'completed',
+        'url': 42,
+        'isMainFrame': 1,
+      });
+      expect(e.url, '');
+      expect(e.isMainFrame, isTrue);
+      expect(e.errorCode, isNull);
+    });
   });
 
   group('US1 — service stream', () {
@@ -151,6 +162,28 @@ void main() {
       await pump();
       expect(tracker.entries('w').length, before);
       await controller.close();
+    });
+
+    test('N6b: started+completed pairs do not read as a cycle', () {
+      final tracker = NavigationTracker();
+      void visit(String url) {
+        tracker.handleEvent('w', _ev(WebviewNavigationPhase.started, url));
+        tracker.handleEvent('w', _ev(WebviewNavigationPhase.completed, url));
+      }
+
+      visit('https://a.dev/');
+      visit('https://b.dev/');
+      // Adapters emit a started+completed pair per load; that is not a loop.
+      expect(tracker.entries('w').map((v) => v.url), [
+        'https://a.dev/',
+        'https://a.dev/',
+        'https://b.dev/',
+        'https://b.dev/',
+      ]);
+      expect(tracker.hasCycle('w'), isFalse);
+
+      visit('https://a.dev/'); // an actual A -> B -> A revisit
+      expect(tracker.hasCycle('w'), isTrue);
     });
   });
 }

@@ -53,6 +53,27 @@ void main() {
       expect(filter.matches(_entry(url: 'https://x.dev/api/v2')), isTrue);
       expect(filter.matches(_entry(url: 'https://x.dev/img')), isFalse);
     });
+
+    test('C1: drifted field types decode without throwing', () {
+      final e = WebviewCaptureEntry.fromChannelArgs(const {
+        'url': 'https://x.dev/api',
+        'method': 'GET',
+        'requestHeaders': {'x-attempt': 2},
+        'status': '200',
+        'responseHeaders': 'not-a-map',
+      });
+      expect(e.status, 200);
+      expect(e.requestHeaders['x-attempt'], '2');
+      expect(e.responseHeaders, isEmpty);
+      expect(
+        WebviewCaptureEntry.fromChannelArgs(const {'status': 200.5}).status,
+        200,
+      );
+      expect(
+        WebviewCaptureEntry.fromChannelArgs(const {'status': 'nope'}).status,
+        isNull,
+      );
+    });
   });
 
   group('US1 — service guards', () {
@@ -98,6 +119,43 @@ void main() {
         throwsA(isA<WebviewException>()
             .having((e) => e.code, 'code', 'port_not_wired')),
       );
+    });
+
+    test('C7: the default service stream is redacted (SC-3)', () async {
+      final controller = StreamController<WebviewCaptureEntry>();
+      port.captureStream = controller.stream;
+      final seen = <WebviewCaptureEntry>[];
+      final sub = service.captureEvents(id: 'w').listen(seen.add);
+      controller.add(_entry(
+        url: 'https://x.dev/p?token=abc&keep=1',
+        requestHeaders: {'Authorization': 'Bearer xyz', 'Accept': 'json'},
+      ));
+      await Future<void>.delayed(Duration.zero);
+      final e = seen.single;
+      expect(e.requestHeaders['Authorization'], '<redacted>');
+      expect(e.requestHeaders['Accept'], 'json');
+      expect(e.url, contains('token=<redacted>'));
+      expect(e.url, contains('keep=1'));
+      await sub.cancel();
+      await controller.close();
+    });
+
+    test('C7: redact: false is the explicit trusted-consumer opt-out',
+        () async {
+      final controller = StreamController<WebviewCaptureEntry>();
+      port.captureStream = controller.stream;
+      final seen = <WebviewCaptureEntry>[];
+      final sub =
+          service.captureEvents(id: 'w', redact: false).listen(seen.add);
+      controller.add(_entry(
+        url: 'https://x.dev/p?token=abc',
+        requestHeaders: {'Authorization': 'Bearer xyz'},
+      ));
+      await Future<void>.delayed(Duration.zero);
+      expect(seen.single.requestHeaders['Authorization'], 'Bearer xyz');
+      expect(seen.single.url, contains('token=abc'));
+      await sub.cancel();
+      await controller.close();
     });
   });
 
@@ -157,6 +215,42 @@ void main() {
       expect(e.url, contains('token=abc'));
     });
 
+    test('C4: the fragment is redacted independently of the query', () {
+      const redactor = CaptureSecretRedactor();
+      expect(
+        redactor.redactUrl('https://x.dev/p?keep=1#token=abc'),
+        'https://x.dev/p?keep=1#token=<redacted>',
+      );
+      expect(
+        redactor.redactUrl('https://x.dev/p?token=abc#token=def'),
+        'https://x.dev/p?token=<redacted>#token=<redacted>',
+      );
+      expect(
+        redactor.redactUrl('https://x.dev/p#section-2'),
+        'https://x.dev/p#section-2',
+      );
+      expect(redactor.redactUrl('https://x.dev/p'), 'https://x.dev/p');
+    });
+
+    test('C5: maxBodyBytes is a UTF-8 byte cap that never splits a character',
+        () {
+      final manager = NetworkCaptureManager(
+        budget: const CaptureBudget(maxBodyBytes: 10),
+      );
+      manager.ingest('w', _entry(responseBody: 'é' * 100));
+      final cropped = manager.entries('w').last.responseBody!;
+      expect(cropped, 'é' * 5); // 10 UTF-8 bytes — 10 code units would be 20
+      expect(cropped.codeUnits, hasLength(5));
+
+      final tight = NetworkCaptureManager(
+        budget: const CaptureBudget(maxBodyBytes: 1),
+      );
+      tight.ingest('w', _entry(responseBody: '🎉'));
+      // 4 bytes do not fit in 1: drop the body rather than hand a consumer a
+      // lone surrogate that no longer round-trips through UTF-8.
+      expect(tight.entries('w').last.responseBody, '');
+    });
+
     test('C5: budgets — maxEntries keeps latest, maxBodyBytes truncates',
         () {
       final manager = NetworkCaptureManager(
@@ -181,6 +275,9 @@ class _CaptureFakePort implements WebviewPort {
   String? lastCaptureId;
   bool? lastCaptureEnabled;
   WebviewCaptureFilter? lastCaptureFilter;
+
+  /// The stream [captureEvents] hands back (spec 005 US1).
+  Stream<WebviewCaptureEntry> captureStream = const Stream.empty();
 
   @override
   Future<bool> isSupported() async => true;
@@ -244,7 +341,7 @@ class _CaptureFakePort implements WebviewPort {
 
   @override
   Stream<WebviewCaptureEntry> captureEvents({required String id}) =>
-      const Stream.empty();
+      captureStream;
 
   @override
   Future<void> setCookie(WebviewCookie cookie) async {}

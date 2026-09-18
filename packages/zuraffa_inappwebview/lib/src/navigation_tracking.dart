@@ -34,9 +34,13 @@ class WebviewNavigationEvent {
           (p) => p.name == args['type'],
           orElse: () => WebviewNavigationPhase.started,
         ),
-        url: args['url'] as String? ?? '',
-        isMainFrame: args['isMainFrame'] as bool? ?? true,
-        errorCode: args['code'] as String?,
+        url: args['url'] is String ? args['url'] as String : '',
+        isMainFrame: switch (args['isMainFrame']) {
+          bool v => v,
+          num v => v != 0,
+          _ => true,
+        },
+        errorCode: args['code'] is String ? args['code'] as String : null,
         at: at,
       );
 
@@ -136,10 +140,18 @@ class NavigationTracker {
 
   /// Whether the record shows a revisit loop: the latest url reappears
   /// earlier in the record (A → B → A).
+  ///
+  /// Only `completed` visits count, and consecutive repeats of one url
+  /// collapse. Adapters emit a `started`+`completed` pair per load, so
+  /// reading the raw entries would make every ordinary two-page browse
+  /// look like a loop.
   bool hasCycle(String id) {
-    final urls = _entries[id]?.map((v) => v.url).toList() ?? const [];
+    final urls = <String>[];
+    for (final v in _entries[id] ?? const <UrlVisit>[]) {
+      if (v.phase != WebviewNavigationPhase.completed) continue;
+      if (urls.isEmpty || urls.last != v.url) urls.add(v.url);
+    }
     if (urls.length < 3) return false;
-    final last = urls.last;
-    return urls.take(urls.length - 1).contains(last);
+    return urls.take(urls.length - 1).contains(urls.last);
   }
 }

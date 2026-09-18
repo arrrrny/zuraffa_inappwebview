@@ -142,9 +142,18 @@ class WebviewService {
   }
 
   /// Intercepted traffic stream for [id] (spec 005).
-  Stream<WebviewCaptureEntry> captureEvents({required String id}) {
+  ///
+  /// Entries are redacted by default (spec 005 US3/SC-3): auth-shaped
+  /// header values and URL params become `<redacted>` before any consumer
+  /// observes them. Pass `redact: false` only for trusted in-process
+  /// consumers that need raw values.
+  Stream<WebviewCaptureEntry> captureEvents({
+    required String id,
+    bool redact = true,
+  }) {
     _requireCreated(id);
-    return port.captureEvents(id: id);
+    final events = port.captureEvents(id: id);
+    return redact ? events.map(const CaptureSecretRedactor().redact) : events;
   }
 
   // -- Cookies are global (shared store), no id scoping. --
