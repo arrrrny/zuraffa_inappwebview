@@ -12,7 +12,7 @@ evaluateJavascript, cookie store, typed settings, zuraffa module wiring.
 |---|---|---|---|---|
 | 1 | Dialogue dismissal (clean captures) | spec 002, `DialogueDismisser` | `002-dismiss-dialogues` | PR |
 | 2 | Screenshot & PDF export | spec 001, `takeScreenshot`/`PdfConfiguration` | `003-screenshot-pdf-export` | PR |
-| 3 | Navigation tracking + in-webview navigation guards | `NavigationTracker`, `keepNavigationInWebView` | `004-navigation-tracking` | PR |
+| 3 | Navigation tracking (in-webview navigation guards defer to the attachable-widget spec, FEATURES tier C) | `NavigationTracker`, `UrlCycleEntry` | `004-navigation-tracking` | PR |
 | 4 | Network capture / mission-grade intercept (+ distillation, budgets, redaction) | spec 010, `NetworkCaptureManager` → `CaptureSource` port | `005-network-capture` | PR |
 | 5 | Webview pool — mission-scoped sessions, domain affinity, memory-pressure disposal | spec 007, `WebViewPool` service | `006-webview-pool` | PR |
 | 6 | Session recipes — record/replay user flows | `RecipeRecorder`/`RecipeReplayer` → `RecipePort` | `007-session-recipes` | PR |
