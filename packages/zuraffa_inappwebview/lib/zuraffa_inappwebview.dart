@@ -13,13 +13,50 @@ library;
 
 export 'src/dialogue_dismiss.dart'
     show DialogueDismissPolicy, DialogueDismissScript;
+export 'src/network_capture.dart'
+    show
+        CaptureBudget,
+        CaptureSecretRedactor,
+        NetworkCaptureManager,
+        WebviewCaptureEntry,
+        WebviewCaptureFilter,
+        kRedactionMarker;
+export 'src/navigation_tracking.dart'
+    show
+        NavigationTracker,
+        UrlVisit,
+        WebviewNavigationEvent,
+        WebviewNavigationPhase;
 export 'src/webview_exception.dart';
 export 'src/webview_module.dart'
     show WebviewModule, registerWebview;
 export 'src/webview_port.dart' show WebviewPort;
 export 'src/webview_service.dart' show UnwiredWebviewPort, WebviewService;
+export 'src/webview_pool.dart' show WebviewPool;
+export 'src/portable_sessions.dart'
+    show PortableSession, WebviewSessionStore, WebViewSessions;
+export 'src/session_recipes.dart'
+    show
+        RecipeDriver,
+        RecipeRecorder,
+        RecipeStep,
+        RecipeTapStep,
+        RecipeUrlStep,
+        ReplayProgress,
+        ReplayResult,
+        SessionRecipe,
+        WebviewServiceRecipeDriver,
+        replay;
+export 'src/vcr_record_replay.dart'
+    show Cassette, CassetteEntry, VcrRecorder, VcrReplayer;
+export 'src/webview_agent_tools.dart' show WebviewAgentTools;
 export 'src/webview_types.dart'
-    show WebviewCookie, WebviewSettings, WebviewUri;
+    show
+        ScreenshotConfiguration,
+        ScreenshotFormat,
+        WebviewCookie,
+        WebviewSettings,
+        WebviewUri;
 export 'src/webview_usecases.dart'
     show
         EvaluateJavascriptParams,

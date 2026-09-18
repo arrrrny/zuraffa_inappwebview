@@ -79,6 +79,112 @@ class MacosWebviewPort implements WebviewPort {
   }
 
   @override
+  Future<List<int>?> takeScreenshot({
+    required String id,
+    ScreenshotConfiguration? config,
+  }) async {
+    final result = await channel.call('takeScreenshot', {
+      'id': id,
+      if (config != null) ...config.toChannelArgs(),
+    });
+    return _decodeBytes(result?['data']);
+  }
+
+  @override
+  Future<List<int>?> exportPdf({required String id}) async {
+    final result = await channel.call('exportPdf', {'id': id});
+    return _decodeBytes(result?['data']);
+  }
+
+  List<int>? _decodeBytes(Object? raw) {
+    if (raw == null) return null;
+    if (raw is! List) {
+      throw const MacosWebviewException(
+        'malformed_response',
+        'The capture result carried a non-list data payload.',
+        recoverable: false,
+      );
+    }
+    return [for (final b in raw) b as int];
+  }
+
+  @override
+  Stream<WebviewNavigationEvent> navigationEvents({required String id}) {
+    final source = channel.eventSource;
+    if (source == null) {
+      return Stream.error(const MacosWebviewException(
+        'channel_not_wired',
+        'No event source was injected — pass one to the channel to '
+        'subscribe to navigation events.',
+        recoverable: false,
+      ));
+    }
+    return source('navigationEvents').asyncMap((raw) {
+      if (raw is! Map) {
+        throw const MacosWebviewException(
+          'malformed_response',
+          'A navigation event carried a non-map payload.',
+          recoverable: false,
+        );
+      }
+      return Map<String, Object?>.from(raw);
+    }).where((map) => map['id'] == id).map(
+          WebviewNavigationEvent.fromChannelArgs,
+        );
+  }
+
+  @override
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) async {
+    await channel.call('loadHtml', {
+      'id': id,
+      'html': html,
+      if (baseUrl != null) 'baseUrl': baseUrl,
+    });
+  }
+
+  @override
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) async {
+    await channel.call('setCaptureEnabled', {
+      'id': id,
+      'enabled': enabled,
+      if (filter != null) ...filter.toChannelArgs(),
+    });
+  }
+
+  @override
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) {
+    final source = channel.eventSource;
+    if (source == null) {
+      return Stream.error(const MacosWebviewException(
+        'channel_not_wired',
+        'No event source was injected — pass one to the channel to '
+        'subscribe to capture events.',
+        recoverable: false,
+      ));
+    }
+    return source('captureEvents').asyncMap((raw) {
+      if (raw is! Map) {
+        throw const MacosWebviewException(
+          'malformed_response',
+          'A capture event carried a non-map payload.',
+          recoverable: false,
+        );
+      }
+      return Map<String, Object?>.from(raw);
+    }).where((map) => map['id'] == id).map(
+          WebviewCaptureEntry.fromChannelArgs,
+        );
+  }
+
+  @override
   Future<void> setCookie(WebviewCookie cookie) async {
     await channel.call('setCookie', cookie.toChannelArgs());
   }
