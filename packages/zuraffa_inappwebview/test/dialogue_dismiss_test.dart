@@ -1,6 +1,58 @@
 import 'package:test/test.dart';
 import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
 
+/// Golden copy of the canonical dismissal script.
+///
+/// Deliberately duplicated from `DialogueDismissScript.source`: the shipped
+/// payload is a behaviour contract, so editing it must be a conscious,
+/// reviewable diff here too (spec 002, D3/D4). Whitespace is normalized
+/// before comparison, so only a semantic edit trips the pin.
+const String _goldenDismissSource = '''
+(function () {
+  try {
+    var removed = 0;
+    var all = document.querySelectorAll('*');
+    var doomed = [];
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      if (el === document.documentElement || el === document.body) continue;
+      var pos = window.getComputedStyle(el).position;
+      if (pos === 'fixed' || pos === 'sticky') doomed.push(el);
+    }
+    for (var k = 0; k < doomed.length; k++) {
+      doomed[k].remove();
+      removed++;
+    }
+    var roots = [document.documentElement, document.body];
+    for (var j = 0; j < roots.length; j++) {
+      if (!roots[j]) continue;
+      roots[j].style.overflow = '';
+      roots[j].style.margin = '';
+    }
+    return removed;
+  } catch (e) {
+    return 0;
+  }
+})()
+''';
+
+/// Golden copy of the reset block (spec 002, D4).
+const String _goldenResetBlock = '''
+    var roots = [document.documentElement, document.body];
+    for (var j = 0; j < roots.length; j++) {
+      if (!roots[j]) continue;
+      roots[j].style.overflow = '';
+      roots[j].style.margin = '';
+    }
+''';
+
+/// Trims each line and drops blanks so the pins tolerate reformatting.
+String _normalizeSource(String source) => source
+    .split('\n')
+    .map((line) => line.trim())
+    .where((line) => line.isNotEmpty)
+    .join('\n');
+
 /// Fake port that records every evaluated JS source (per id) and can be
 /// scripted to raise during evaluation.
 class RecordingWebviewPort implements WebviewPort {
@@ -94,18 +146,15 @@ void main() {
   group('US2 — canonical script', () {
     final source = DialogueDismissScript.source;
 
-    test('D3: removes computed fixed/sticky elements', () {
-      expect(source, contains('getComputedStyle'));
-      expect(source, contains('fixed'));
-      expect(source, contains('sticky'));
-      expect(source, contains('.remove()'));
+    test('D3: canonical source is pinned (removal contract, golden)', () {
+      expect(_normalizeSource(source), _normalizeSource(_goldenDismissSource));
     });
 
     test('D4: resets overflow/margin on documentElement and body', () {
-      expect(source, contains('documentElement'));
-      expect(source, contains('body'));
-      expect(source, contains('overflow'));
-      expect(source, contains('margin'));
+      expect(
+        _normalizeSource(source),
+        contains(_normalizeSource(_goldenResetBlock)),
+      );
     });
 
     test('D5: top-level document only (no frames recursion)', () {
