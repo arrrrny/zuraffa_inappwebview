@@ -45,6 +45,8 @@ export 'src/session_recipes.dart'
         SessionRecipe,
         WebviewServiceRecipeDriver,
         replay;
+export 'src/vcr_record_replay.dart'
+    show Cassette, CassetteEntry, VcrRecorder, VcrReplayer;
 export 'src/webview_types.dart'
     show
         ScreenshotConfiguration,

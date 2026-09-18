@@ -134,6 +134,19 @@ class AndroidWebviewPort implements WebviewPort {
   }
 
   @override
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) async {
+    await channel.call('loadHtml', {
+      'id': id,
+      'html': html,
+      if (baseUrl != null) 'baseUrl': baseUrl,
+    });
+  }
+
+  @override
   Future<void> setCaptureEnabled({
     required String id,
     required bool enabled,

@@ -199,6 +199,13 @@ class _RecipeFakePort implements WebviewPort {
       const Stream.empty();
 
   @override
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) async {}
+
+  @override
   Future<void> setCaptureEnabled({
     required String id,
     required bool enabled,

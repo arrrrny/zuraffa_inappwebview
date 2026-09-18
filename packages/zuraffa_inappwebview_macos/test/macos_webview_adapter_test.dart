@@ -259,4 +259,19 @@ void main() {
       );
     });
   });
+
+  group('loadHtml (spec 008)', () {
+    test('V7: ships id + html + baseUrl on the envelope', () async {
+      port = MacosWebviewPort(channel: scripted(payload: {'ok': true}));
+      await port.loadHtml(
+        id: 'w',
+        html: '<html/>',
+        baseUrl: 'https://x.dev/a',
+      );
+      expect(lastMethod, 'loadHtml');
+      expect(lastArgs['id'], 'w');
+      expect(lastArgs['html'], '<html/>');
+      expect(lastArgs['baseUrl'], 'https://x.dev/a');
+    });
+  });
 }
