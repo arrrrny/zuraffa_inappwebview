@@ -4,6 +4,7 @@ library;
 
 import 'dart:async';
 
+import 'js_literal.dart';
 import 'navigation_tracking.dart';
 import 'webview_service.dart';
 import 'webview_types.dart';
@@ -153,9 +154,7 @@ class WebviewServiceRecipeDriver implements RecipeDriver {
   @override
   Future<void> tap(String selector) => service.evaluateJavascript(
         id: webviewId,
-        source:
-            "(document.querySelector(${_quote(selector)}) ?? {click: null}).click()",
+        source: '(document.querySelector(${jsStringLiteral(selector)}) ?? '
+            '{click: null}).click()',
       );
-
-  static String _quote(String raw) => "'${raw.replaceAll("'", r"\'")}'";
 }

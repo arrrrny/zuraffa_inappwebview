@@ -5,6 +5,7 @@ library;
 
 import 'dart:convert';
 
+import 'js_literal.dart';
 import 'webview_exception.dart';
 import 'webview_service.dart';
 import 'webview_types.dart';
@@ -85,7 +86,16 @@ class WebViewSessions {
     );
     final localStorage = <String, String>{};
     if (raw is String && raw.isNotEmpty) {
-      final decoded = jsonDecode(raw);
+      final Object? decoded;
+      try {
+        decoded = jsonDecode(raw);
+      } on FormatException {
+        throw WebviewException(
+          'local_storage_unreadable',
+          'The localStorage snapshot was not JSON: $raw',
+          recoverable: true,
+        );
+      }
       if (decoded is Map) {
         decoded.forEach((key, value) {
           localStorage['$key'] = '$value';
@@ -121,8 +131,8 @@ class WebViewSessions {
     for (final entry in session.localStorage.entries) {
       await service.evaluateJavascript(
         id: webviewId,
-        source:
-            "window.localStorage.setItem('${_escape(entry.key)}', '${_escape(entry.value)}')",
+        source: 'window.localStorage.setItem('
+            '${jsStringLiteral(entry.key)}, ${jsStringLiteral(entry.value)})',
       );
     }
   }
@@ -132,6 +142,4 @@ class WebViewSessions {
 
   /// The stored session names.
   Future<List<String>> list() => store.list();
-
-  static String _escape(String raw) => raw.replaceAll("'", r"\'");
 }

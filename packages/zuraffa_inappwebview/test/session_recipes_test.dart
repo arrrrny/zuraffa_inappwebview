@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:test/test.dart';
 import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
@@ -120,10 +121,15 @@ void main() {
       expect(port.lastEvaluatedSource, contains('querySelector'));
       expect(port.lastEvaluatedSource, contains('#buy'));
       expect(port.lastEvaluatedSource, contains('click'));
+
+      // a selector carrying a backslash must stay a valid JS literal
+      const selector = r'[href^="C:\"]';
+      await driver.tap(selector);
+      expect(port.lastEvaluatedSource, contains(jsonEncode(selector)));
+      expect(port.lastEvaluatedSource, isNot(contains('\n')));
     });
   });
 }
-
 class RecordingDriver implements RecipeDriver {
   final List<String> calls = [];
   final Set<String> _failOn = {};

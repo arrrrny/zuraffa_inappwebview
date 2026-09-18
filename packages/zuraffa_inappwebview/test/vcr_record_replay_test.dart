@@ -50,6 +50,35 @@ void main() {
       await cap.close();
     });
 
+    test('V1: stop() awaits a navigation handler still in flight',
+        () async {
+      final port = _VcrFakePort();
+      final html = Completer<String?>();
+      port.htmlFor = ({required String id}) => html.future;
+      port.cookiesFor = ({required String url}) async =>
+          [const WebviewCookie(name: 'sid', value: '1')];
+      final service = WebviewService(port: port);
+      await service.createHeadless(id: 'w');
+
+      final nav = StreamController<WebviewNavigationEvent>();
+      final cap = StreamController<WebviewCaptureEntry>();
+      final recorder = VcrRecorder(service: service, webviewId: 'w')
+        ..record(navigationEvents: nav.stream, captureEvents: cap.stream);
+
+      nav.add(_completed('https://x.dev/a'));
+      // the handler is parked inside getHtml; stop() must not snapshot yet
+      await Future<void>.delayed(Duration.zero);
+      final cassette = recorder.stop();
+
+      html.complete('<html>a</html>');
+      final recorded = await cassette;
+      expect(recorded.entries, hasLength(1));
+      expect(recorded.entries.single.html, '<html>a</html>');
+
+      await nav.close();
+      await cap.close();
+    });
+
     test('V2: cassette JSON round-trip preserves entries', () {
       final cassette = Cassette(entries: [
         CassetteEntry(
@@ -191,6 +220,24 @@ void main() {
         'https://x.dev/api/2',
       ]);
       await sub.cancel();
+    });
+
+    test('V7: dispose() closes captureEvents', () async {
+      final replayer = VcrReplayer(
+        cassette: cassette,
+        service: service,
+        webviewId: 'w',
+      );
+      var done = false;
+      replayer.captureEvents.listen(
+        (_) {},
+        onDone: () => done = true,
+      );
+
+      await replayer.dispose();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(done, isTrue);
     });
   });
 }

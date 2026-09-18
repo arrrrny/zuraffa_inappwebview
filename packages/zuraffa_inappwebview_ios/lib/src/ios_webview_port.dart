@@ -105,7 +105,14 @@ class IosWebviewPort implements WebviewPort {
         recoverable: false,
       );
     }
-    return [for (final b in raw) b as int];
+    if (raw.any((b) => b is! int)) {
+      throw const IosWebviewException(
+        'malformed_response',
+        'The capture result carried non-integer byte values.',
+        recoverable: false,
+      );
+    }
+    return raw.cast<int>();
   }
 
   @override

@@ -6,5 +6,7 @@
 | PS2 | load re-applies cookies + setItem writes | T002 | DONE |
 | PS3 | missing name → typed session_not_found, nothing applied | T003 | DONE |
 | PS4 | JSON round-trip + delete + list through the store | T004 | DONE |
+| PS5 | generated `setItem` source is a JSON string literal (backslashes, newlines, hostile values) | T006 | DONE |
+| PS6 | a non-JSON localStorage read fails typed, not with a `FormatException` | T006 | DONE |
 
-Counts: 4 behaviors, 4 driven red → green, 0 remaining.
+Counts: 6 behaviors, 6 driven red → green, 0 remaining.

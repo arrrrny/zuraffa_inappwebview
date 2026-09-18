@@ -27,6 +27,18 @@ void main() {
       expect(e.isMainFrame, isFalse);
       expect(e.errorCode, 'net_err');
     });
+
+    test('N1: an unknown phase type is a typed malformed_response', () {
+      expect(
+        () => WebviewNavigationEvent.fromChannelArgs(const {
+          'type': 'didFinish',
+          'url': 'https://x.dev/',
+        }),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')
+            .having((e) => e.recoverable, 'recoverable', isFalse)),
+      );
+    });
   });
 
   group('US1 — service stream', () {

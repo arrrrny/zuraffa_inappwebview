@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:test/test.dart';
 import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
 
@@ -31,6 +33,19 @@ void main() {
       expect(saved.localStorage['theme'], 'dark');
       expect(saved.savedAt, isNotNull);
     });
+
+    test('PS6: a non-JSON localStorage read fails typed, not with '
+        'FormatException', () async {
+      port.evaluateResult = 'undefined';
+
+      await expectLater(
+        sessions.save(webviewId: 'w', name: 'shop', origin: 'https://x.dev'),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'local_storage_unreadable')
+            .having((e) => e.recoverable, 'recoverable', isTrue)),
+      );
+      expect(store.read('shop'), isNull);
+    });
   });
 
   group('US2 — load', () {
@@ -63,6 +78,62 @@ void main() {
       expect(port.storedCookies, isEmpty);
       expect(port.evaluatedSources, isEmpty);
     });
+
+    test('PS5: the setItem source is a JSON string literal for ordinary '
+        'and hostile values', () async {
+      const hostile = r"\');globalThis.__pwned='x';//";
+      const values = <String, String>{
+        'windowsPath': r'C:\Users\x',
+        'escapedBackslash': r'a\nb',
+        'realNewline': 'a\nb',
+        'hostile': hostile,
+      };
+      await store.save(PortableSession(
+        name: 'shop',
+        origin: 'https://x.dev',
+        localStorage: values,
+      ));
+
+      await sessions.load(webviewId: 'w', name: 'shop');
+
+      final sources =
+          port.evaluatedSources.where((s) => s.contains('setItem')).toList();
+      expect(sources, hasLength(values.length));
+      for (final entry in values.entries) {
+        final literal = jsonEncode(entry.key);
+        final source =
+            sources.firstWhere((s) => s.contains(literal));
+        // `jsonEncode` emits a valid JS literal, so the generated source
+        // is byte-for-byte what it built — no hand-rolled escaper in play
+        expect(
+          source,
+          'window.localStorage.setItem('
+          '$literal, ${jsonEncode(entry.value)})',
+        );
+        expect(source, isNot(contains('\n')));
+        expect(source, isNot(contains('\r')));
+      }
+    });
+
+    test('PS5: a hostile value stays inert data inside its literal',
+        () async {
+      await store.save(PortableSession(
+        name: 'evil',
+        origin: 'https://x.dev',
+        localStorage: {'k': r"\');globalThis.__pwned='x';//"},
+      ));
+
+      await sessions.load(webviewId: 'w', name: 'evil');
+
+      const prefix = 'window.localStorage.setItem(';
+      final source = port.evaluatedSources.last;
+      expect(source, startsWith(prefix));
+      expect(source, endsWith(')'));
+      final args = source.substring(prefix.length, source.length - 1);
+      final comma = args.indexOf(', ');
+      expect(jsonDecode(args.substring(comma + 2)),
+          r"\');globalThis.__pwned='x';//");
+    });
   });
 
   group('US3 — hygiene', () {
@@ -72,12 +143,16 @@ void main() {
         origin: 'https://x.dev',
         cookies: const [WebviewCookie(name: 'sid', value: '1')],
         localStorage: const {'theme': 'dark'},
+        savedAt: DateTime.fromMillisecondsSinceEpoch(1700000000000),
       );
       final back = PortableSession.fromJson(session.toJson());
       expect(back.name, 'shop');
       expect(back.origin, 'https://x.dev');
       expect(back.cookies.single.name, 'sid');
       expect(back.localStorage['theme'], 'dark');
+      // a fixed timestamp, so dropping `savedAtMs` from `toJson` cannot
+      // pass by landing in the same clock millisecond
+      expect(back.savedAt.millisecondsSinceEpoch, 1700000000000);
 
       await store.save(session);
       expect(await store.list(), ['shop']);

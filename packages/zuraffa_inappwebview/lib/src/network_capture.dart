@@ -3,6 +3,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 /// One intercepted XHR/fetch exchange pushed by the platform.
 class WebviewCaptureEntry {
@@ -61,7 +62,7 @@ class WebviewCaptureFilter {
 
 /// Bounded retention policy applied at ingestion (spec 005 FR-3):
 /// [maxEntries] keeps the latest entries when exceeded; [maxBodyBytes]
-/// truncates string bodies.
+/// truncates string bodies to that many UTF-8 bytes.
 class CaptureBudget {
   final int maxEntries;
   final int maxBodyBytes;
@@ -75,24 +76,29 @@ class CaptureBudget {
 /// Marker substituted for any redacted secret value (zikzak A15).
 const String kRedactionMarker = '<redacted>';
 
-const Set<String> _redactedHeaderKeys = {
-  'authorization',
-  'proxy-authorization',
-  'cookie',
-  'set-cookie',
-};
-
-const Set<String> _redactedParamKeys = {
-  'api_key',
-  'apikey',
-  'password',
-  'passwd',
+/// Case-insensitive fragments that mark a header or query-param name as
+/// auth-shaped.
+///
+/// Names are matched on shape rather than by a fixed allowlist: the
+/// allowlist kept losing the race with new spellings, and `x-api-key`,
+/// `api-key`, `x-auth-token`, `x-goog-api-key`, `proxy-authenticate`,
+/// `private_key`, `id_token` and `sessionid` all reached consumers
+/// verbatim. A name that merely looks secret is redacted — the fail-safe
+/// direction for a value that is otherwise durable in a VCR cassette.
+const List<String> _secretNameFragments = [
+  'key',
   'secret',
   'token',
-  'access_token',
-  'refresh_token',
-  'client_secret',
-};
+  'auth',
+  'password',
+  'passwd',
+  'cookie',
+  'session',
+  'sig',
+];
+
+bool _isSecretName(String name) =>
+    _secretNameFragments.any(name.toLowerCase().contains);
 
 /// Source-level redaction of auth-shaped secrets (spec 005 FR-4):
 /// redactable header values and URL query params become `<redacted>`
@@ -113,9 +119,7 @@ class CaptureSecretRedactor {
 
   Map<String, String> _redactHeaders(Map<String, String> headers) => {
         for (final e in headers.entries)
-          e.key: _redactedHeaderKeys.contains(e.key.toLowerCase())
-              ? kRedactionMarker
-              : e.value,
+          e.key: _isSecretName(e.key) ? kRedactionMarker : e.value,
       };
 
   /// Redacts auth-shaped query parameters, preserving structure and
@@ -133,11 +137,7 @@ class CaptureSecretRedactor {
         continue;
       }
       final key = Uri.decodeQueryComponent(part.substring(0, eq));
-      kept.add(
-        _redactedParamKeys.contains(key.toLowerCase())
-            ? '$key=$kRedactionMarker'
-            : part,
-      );
+      kept.add(_isSecretName(key) ? '$key=$kRedactionMarker' : part);
     }
     return '$base?${kept.join('&')}';
   }
@@ -175,21 +175,42 @@ class NetworkCaptureManager {
   void ingest(String id, WebviewCaptureEntry entry) {
     final buffered = _entries.putIfAbsent(id, () => []);
     var e = redactAuth ? _redactor.redact(entry) : entry;
-    if (e.requestBody != null &&
-        e.requestBody!.length > budget.maxBodyBytes) {
-      e = _copyWith(e, requestBody: e.requestBody!.substring(0, budget.maxBodyBytes));
+    final requestBody = e.requestBody;
+    if (requestBody != null) {
+      final capped = _truncateToBytes(requestBody, budget.maxBodyBytes);
+      if (capped.length != requestBody.length) {
+        e = _copyWith(e, requestBody: capped);
+      }
     }
-    if (e.responseBody != null &&
-        e.responseBody!.length > budget.maxBodyBytes) {
-      e = _copyWith(
-        e,
-        responseBody: e.responseBody!.substring(0, budget.maxBodyBytes),
-      );
+    final responseBody = e.responseBody;
+    if (responseBody != null) {
+      final capped = _truncateToBytes(responseBody, budget.maxBodyBytes);
+      if (capped.length != responseBody.length) {
+        e = _copyWith(e, responseBody: capped);
+      }
     }
     buffered.add(e);
     if (buffered.length > budget.maxEntries) {
       buffered.removeRange(0, buffered.length - budget.maxEntries);
     }
+  }
+
+  /// Truncates [body] to at most [maxBytes] UTF-8 bytes, cutting on a
+  /// code-point boundary.
+  ///
+  /// A plain `substring` counts UTF-16 code units — up to 4× the
+  /// advertised cap for non-ASCII payloads — and can split a surrogate
+  /// pair, leaving an unpaired surrogate that throws when the entry is
+  /// JSON-encoded into a cassette.
+  static String _truncateToBytes(String body, int maxBytes) {
+    final encoded = utf8.encode(body);
+    if (encoded.length <= maxBytes) return body;
+    if (maxBytes <= 0) return '';
+    var end = maxBytes;
+    while (end > 0 && (encoded[end] & 0xC0) == 0x80) {
+      end--;
+    }
+    return utf8.decode(encoded.sublist(0, end));
   }
 
   /// The buffered entries for [id] in ingestion order (unmodifiable).

@@ -4,6 +4,8 @@ library;
 
 import 'dart:async';
 
+import 'webview_exception.dart';
+
 /// The phase of a navigation event (channel key `type`).
 enum WebviewNavigationPhase { started, completed, failed }
 
@@ -30,15 +32,28 @@ class WebviewNavigationEvent {
     DateTime? at,
   }) =>
       WebviewNavigationEvent(
-        phase: WebviewNavigationPhase.values.firstWhere(
-          (p) => p.name == args['type'],
-          orElse: () => WebviewNavigationPhase.started,
-        ),
+        phase: _phaseOf(args['type']),
         url: args['url'] as String? ?? '',
         isMainFrame: args['isMainFrame'] as bool? ?? true,
         errorCode: args['code'] as String?,
         at: at,
       );
+
+  /// Maps the channel `type` to a phase. An unknown value is a contract
+  /// breach, not a "started": fabricating a phase would feed a phantom
+  /// visit into [NavigationTracker], the recipe recorder and the VCR
+  /// recorder, and the adapters already reject malformed payloads.
+  static WebviewNavigationPhase _phaseOf(Object? type) {
+    for (final phase in WebviewNavigationPhase.values) {
+      if (phase.name == type) return phase;
+    }
+    throw WebviewException(
+      'malformed_response',
+      'Unknown navigation phase "$type" — expected one of '
+      '${WebviewNavigationPhase.values.map((p) => p.name).join(', ')}.',
+      recoverable: false,
+    );
+  }
 
   @override
   bool operator ==(Object other) =>

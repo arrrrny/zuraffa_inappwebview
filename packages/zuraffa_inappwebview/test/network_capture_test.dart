@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:test/test.dart';
 import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
@@ -173,6 +174,62 @@ void main() {
         ['https://x.dev/2', 'https://x.dev/3'],
       );
       expect(manager.entries('w').last.responseBody, hasLength(10));
+    });
+
+    test('C5: maxBodyBytes is UTF-8 bytes, not UTF-16 code units', () {
+      final manager = NetworkCaptureManager(
+        budget: const CaptureBudget(maxBodyBytes: 10),
+      );
+      manager.ingest('w', _entry(responseBody: '日本語')); // 3 units, 9 bytes
+      expect(manager.entries('w').last.responseBody, '日本語');
+
+      manager.ingest('w', _entry(responseBody: '日本語です')); // 15 bytes
+      final capped = manager.entries('w').last.responseBody!;
+      expect(capped, '日本語');
+      expect(utf8.encode(capped), hasLength(9));
+    });
+
+    test('C5: truncation never splits a surrogate pair', () {
+      final manager = NetworkCaptureManager(
+        budget: const CaptureBudget(maxBodyBytes: 3),
+      );
+      manager.ingest('w', _entry(responseBody: 'a😀b')); // 1 + 4 + 1 bytes
+      final capped = manager.entries('w').last.responseBody!;
+      expect(capped, 'a');
+      expect(capped.runes.length, capped.length);
+    });
+
+    test('C4: shape-matched secret names are redacted', () {
+      final manager = NetworkCaptureManager();
+      manager.ingest(
+        'w',
+        _entry(
+          url: 'https://x.dev/p?sessionid=a&sig=b&private_key=c&id_token=d'
+              '&keep=1',
+          requestHeaders: {
+            'x-api-key': 'k1',
+            'X-Goog-Api-Key': 'k2',
+            'x-auth-token': 't1',
+            'Proxy-Authenticate': 'Basic',
+            'Accept': 'json',
+          },
+        ),
+      );
+      final e = manager.entries('w').single;
+      expect(e.requestHeaders['x-api-key'], '<redacted>');
+      expect(e.requestHeaders['X-Goog-Api-Key'], '<redacted>');
+      expect(e.requestHeaders['x-auth-token'], '<redacted>');
+      expect(e.requestHeaders['Proxy-Authenticate'], '<redacted>');
+      expect(e.requestHeaders['Accept'], 'json');
+      for (final key in const [
+        'sessionid',
+        'sig',
+        'private_key',
+        'id_token',
+      ]) {
+        expect(e.url, contains('$key=<redacted>'));
+      }
+      expect(e.url, contains('keep=1'));
     });
   });
 }

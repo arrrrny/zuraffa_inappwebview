@@ -125,6 +125,17 @@ void main() {
       );
     });
 
+    test('S6: non-integer data element raises malformed_response', () async {
+      port = IosWebviewPort(channel: scripted(payload: {
+        'data': [1, 1.5],
+      }));
+      await expectLater(
+        port.takeScreenshot(id: 'w'),
+        throwsA(isA<IosWebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+    });
+
     test('S6: exportPdf rides its own method name', () async {
       port = IosWebviewPort(channel: scripted(payload: {
         'data': [9, 8, 7],

@@ -87,6 +87,10 @@ class Cassette {
 /// navigation freezes an entry with html/cookie snapshots and the
 /// captures observed since the previous navigation. Capture payloads are
 /// defensively re-redacted (the 005 redactor).
+///
+/// [stop] awaits navigation handlers that are still mid-flight, so a
+/// navigation that arrived just before the caller stopped recording is
+/// still in the cassette.
 class VcrRecorder {
   final WebviewService service;
   final String webviewId;
@@ -95,6 +99,7 @@ class VcrRecorder {
   final List<CassetteEntry> _entries = [];
   final List<WebviewCaptureEntry> _pendingCaptures = [];
   final List<StreamSubscription> _subs = [];
+  final Set<Future<void>> _inFlight = {};
 
   VcrRecorder({required this.service, required this.webviewId});
 
@@ -104,7 +109,15 @@ class VcrRecorder {
     required Stream<WebviewCaptureEntry> captureEvents,
   }) {
     _subs.add(captureEvents.listen(ingestCapture));
-    _subs.add(navigationEvents.listen(ingestNavigation));
+    _subs.add(navigationEvents.listen(_trackNavigation));
+  }
+
+  /// Listens for a navigation without blocking the stream, keeping the
+  /// handler's future so [stop] can wait for it.
+  void _trackNavigation(WebviewNavigationEvent event) {
+    final pending = ingestNavigation(event);
+    _inFlight.add(pending);
+    unawaited(pending.whenComplete(() => _inFlight.remove(pending)));
   }
 
   /// Buffers one capture (redacted defensively) for the next entry.
@@ -130,11 +143,20 @@ class VcrRecorder {
   }
 
   /// Stops watching and returns the cassette.
+  ///
+  /// Cancelling the subscriptions is not enough on its own: a handler
+  /// already running ([ingestNavigation] awaits `getHtml`, then
+  /// `getCookies`) would finish after the snapshot and lose its entry.
   Future<Cassette> stop() async {
     for (final sub in _subs) {
       await sub.cancel();
     }
     _subs.clear();
+    if (_inFlight.isNotEmpty) {
+      await Future.wait([
+        for (final pending in _inFlight) pending.catchError((Object _) {}),
+      ]);
+    }
     return Cassette(entries: List.of(_entries));
   }
 }
@@ -144,6 +166,11 @@ class VcrRecorder {
 /// the `loadHtml` port op, and synthesizes its captures on
 /// [captureEvents] so downstream capture/distillation logic runs
 /// unmodified — zero network.
+///
+/// Call [dispose] alongside disposing the webview it serves: it closes
+/// the synthesized-capture stream, so a consumer awaiting
+/// `captureEvents.done` completes instead of waiting for the life of the
+/// process.
 class VcrReplayer {
   final Cassette cassette;
   final WebviewService service;
@@ -161,6 +188,9 @@ class VcrReplayer {
 
   /// Synthesized capture events for every served entry (broadcast).
   Stream<WebviewCaptureEntry> get captureEvents => _captures.stream;
+
+  /// Closes [captureEvents]; the replayer serves nothing afterwards.
+  Future<void> dispose() => _captures.close();
 
   /// Serves the best-matching entry for [url] offline.
   Future<void> loadUrl(String url) async {
