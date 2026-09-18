@@ -1,4 +1,6 @@
 import 'dialogue_dismiss.dart';
+import 'navigation_tracking.dart';
+import 'network_capture.dart';
 import 'webview_exception.dart';
 import 'webview_port.dart';
 import 'webview_types.dart';
@@ -76,6 +78,28 @@ class WebviewService {
     return port.getHtml(id: id);
   }
 
+  /// Captures the rendered page as image bytes; null when the platform
+  /// could not capture (spec 003).
+  Future<List<int>?> takeScreenshot({
+    required String id,
+    ScreenshotConfiguration? config,
+  }) {
+    _requireCreated(id);
+    return port.takeScreenshot(id: id, config: config);
+  }
+
+  /// Exports the rendered page as PDF bytes; null on failure (spec 003).
+  Future<List<int>?> exportPdf({required String id}) {
+    _requireCreated(id);
+    return port.exportPdf(id: id);
+  }
+
+  /// Navigation events for the webview bound to [id] (spec 004).
+  Stream<WebviewNavigationEvent> navigationEvents({required String id}) {
+    _requireCreated(id);
+    return port.navigationEvents(id: id);
+  }
+
   /// Removes fixed/sticky overlays from the loaded page for clean captures
   /// (spec 002). Best-effort by contract: port errors during dismissal are
   /// swallowed and never break the caller's flow.
@@ -105,6 +129,22 @@ class WebviewService {
     await port.disposeHeadless(id: id);
     _created.remove(id);
     _running.remove(id);
+  }
+
+  /// Enables/disables network capture for [id] (spec 005).
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) {
+    _requireCreated(id);
+    return port.setCaptureEnabled(id: id, enabled: enabled, filter: filter);
+  }
+
+  /// Intercepted traffic stream for [id] (spec 005).
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) {
+    _requireCreated(id);
+    return port.captureEvents(id: id);
   }
 
   // -- Cookies are global (shared store), no id scoping. --
@@ -185,6 +225,32 @@ class UnwiredWebviewPort implements WebviewPort {
 
   @override
   Future<String?> getHtml({required String id}) => _unwired();
+
+  @override
+  Future<List<int>?> takeScreenshot({
+    required String id,
+    ScreenshotConfiguration? config,
+  }) =>
+      _unwired();
+
+  @override
+  Future<List<int>?> exportPdf({required String id}) => _unwired();
+
+  @override
+  Stream<WebviewNavigationEvent> navigationEvents({required String id}) =>
+      _unwired();
+
+  @override
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) =>
+      _unwired();
+
+  @override
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) =>
+      _unwired();
 
   @override
   Future<void> setCookie(WebviewCookie cookie) => _unwired();
