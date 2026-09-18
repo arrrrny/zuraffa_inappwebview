@@ -1,5 +1,6 @@
 import 'dialogue_dismiss.dart';
 import 'navigation_tracking.dart';
+import 'network_capture.dart';
 import 'webview_exception.dart';
 import 'webview_port.dart';
 import 'webview_types.dart';
@@ -130,6 +131,22 @@ class WebviewService {
     _running.remove(id);
   }
 
+  /// Enables/disables network capture for [id] (spec 005).
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) {
+    _requireCreated(id);
+    return port.setCaptureEnabled(id: id, enabled: enabled, filter: filter);
+  }
+
+  /// Intercepted traffic stream for [id] (spec 005).
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) {
+    _requireCreated(id);
+    return port.captureEvents(id: id);
+  }
+
   // -- Cookies are global (shared store), no id scoping. --
 
   Future<void> setCookie(WebviewCookie cookie) => port.setCookie(cookie);
@@ -221,6 +238,18 @@ class UnwiredWebviewPort implements WebviewPort {
 
   @override
   Stream<WebviewNavigationEvent> navigationEvents({required String id}) =>
+      _unwired();
+
+  @override
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) =>
+      _unwired();
+
+  @override
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) =>
       _unwired();
 
   @override

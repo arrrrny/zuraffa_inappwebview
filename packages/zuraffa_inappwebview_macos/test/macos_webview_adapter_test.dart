@@ -185,4 +185,78 @@ void main() {
       );
     });
   });
+
+  group('network capture (spec 005)', () {
+    test('C7: setCaptureEnabled ships id + enabled + filter args',
+        () async {
+      port = MacosWebviewPort(channel: scripted(payload: {'ok': true}));
+      await port.setCaptureEnabled(
+        id: 'w',
+        enabled: true,
+        filter: const WebviewCaptureFilter(urlPattern: '/api/', maxBodyBytes: 512),
+      );
+      expect(lastMethod, 'setCaptureEnabled');
+      expect(lastArgs['id'], 'w');
+      expect(lastArgs['enabled'], isTrue);
+      expect(lastArgs['urlPattern'], '/api/');
+      expect(lastArgs['maxBodyBytes'], 512);
+    });
+
+    test('C7: captureEvents decodes + filters by id', () async {
+      final events = StreamController<Object?>();
+      addTearDown(() => unawaited(events.close()));
+      port = MacosWebviewPort(channel: MacosWebviewChannel(
+        invoke: (m, a) async => {'ok': true},
+        eventSource: (method) => method == 'captureEvents'
+            ? events.stream.asBroadcastStream()
+            : const Stream.empty(),
+      ));
+      final seen = <WebviewCaptureEntry>[];
+      final sub = port.captureEvents(id: 'w').listen(seen.add);
+      await Future<void>.delayed(Duration.zero);
+      events.add({'id': 'other', 'url': 'x'});
+      events.add({
+        'id': 'w',
+        'url': 'https://x.dev/api',
+        'method': 'POST',
+        'status': 201,
+      });
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, hasLength(1));
+      expect(seen.single.url, 'https://x.dev/api');
+      expect(seen.single.method, 'POST');
+      expect(seen.single.status, 201);
+      await sub.cancel();
+    });
+
+    test('C7: non-map capture event -> malformed_response', () async {
+      final events = StreamController<Object?>();
+      addTearDown(() => unawaited(events.close()));
+      port = MacosWebviewPort(channel: MacosWebviewChannel(
+        invoke: (m, a) async => {'ok': true},
+        eventSource: (method) => method == 'captureEvents'
+            ? events.stream
+            : const Stream.empty(),
+      ));
+      final bad = expectLater(
+        port.captureEvents(id: 'w'),
+        emitsError(isA<MacosWebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+      await Future<void>.delayed(Duration.zero);
+      events.add('oops');
+      await bad;
+    });
+
+    test('C7: missing event source -> channel_not_wired', () async {
+      port = MacosWebviewPort(
+        channel: MacosWebviewChannel(invoke: (m, a) async => {'ok': true}),
+      );
+      await expectLater(
+        port.captureEvents(id: 'w'),
+        emitsError(isA<MacosWebviewException>()
+            .having((e) => e.code, 'code', 'channel_not_wired')),
+      );
+    });
+  });
 }

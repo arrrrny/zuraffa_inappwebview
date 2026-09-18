@@ -13,6 +13,14 @@ library;
 
 export 'src/dialogue_dismiss.dart'
     show DialogueDismissPolicy, DialogueDismissScript;
+export 'src/network_capture.dart'
+    show
+        CaptureBudget,
+        CaptureSecretRedactor,
+        NetworkCaptureManager,
+        WebviewCaptureEntry,
+        WebviewCaptureFilter,
+        kRedactionMarker;
 export 'src/navigation_tracking.dart'
     show
         NavigationTracker,

@@ -218,6 +218,16 @@ class _StreamFakePort implements WebviewPort {
       events;
 
   @override
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) async {}
+
+  @override
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) =>
+      const Stream.empty();
+  @override
   Future<void> setCookie(WebviewCookie cookie) async {}
 
   @override

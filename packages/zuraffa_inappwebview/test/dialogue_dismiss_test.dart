@@ -65,6 +65,16 @@ class RecordingWebviewPort implements WebviewPort {
       const Stream.empty();
 
   @override
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) async {}
+
+  @override
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) =>
+      const Stream.empty();
+  @override
   Future<void> setCookie(WebviewCookie cookie) async {}
 
   @override

@@ -134,6 +134,44 @@ class AndroidWebviewPort implements WebviewPort {
   }
 
   @override
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) async {
+    await channel.call('setCaptureEnabled', {
+      'id': id,
+      'enabled': enabled,
+      if (filter != null) ...filter.toChannelArgs(),
+    });
+  }
+
+  @override
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) {
+    final source = channel.eventSource;
+    if (source == null) {
+      return Stream.error(const AndroidWebviewException(
+        'channel_not_wired',
+        'No event source was injected — pass one to the channel to '
+        'subscribe to capture events.',
+        recoverable: false,
+      ));
+    }
+    return source('captureEvents').asyncMap((raw) {
+      if (raw is! Map) {
+        throw const AndroidWebviewException(
+          'malformed_response',
+          'A capture event carried a non-map payload.',
+          recoverable: false,
+        );
+      }
+      return Map<String, Object?>.from(raw);
+    }).where((map) => map['id'] == id).map(
+          WebviewCaptureEntry.fromChannelArgs,
+        );
+  }
+
+  @override
   Future<void> setCookie(WebviewCookie cookie) async {
     await channel.call('setCookie', cookie.toChannelArgs());
   }
