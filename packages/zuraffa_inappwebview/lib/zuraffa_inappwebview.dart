@@ -11,6 +11,8 @@
 /// browsing needs and grow per need.
 library;
 
+export 'src/dialogue_dismiss.dart'
+    show DialogueDismissPolicy, DialogueDismissScript;
 export 'src/webview_exception.dart';
 export 'src/webview_module.dart'
     show WebviewModule, registerWebview;

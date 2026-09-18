@@ -1,3 +1,4 @@
+import 'dialogue_dismiss.dart';
 import 'webview_exception.dart';
 import 'webview_port.dart';
 import 'webview_types.dart';
@@ -73,6 +74,30 @@ class WebviewService {
   Future<String?> getHtml({required String id}) async {
     _requireCreated(id);
     return port.getHtml(id: id);
+  }
+
+  /// Removes fixed/sticky overlays from the loaded page for clean captures
+  /// (spec 002). Best-effort by contract: port errors during dismissal are
+  /// swallowed and never break the caller's flow.
+  Future<void> dismissDialogues({
+    required String id,
+    DialogueDismissPolicy policy = const DialogueDismissPolicy(),
+  }) async {
+    _requireCreated(id);
+    for (var attempt = 0; attempt < policy.attempts; attempt++) {
+      if (attempt > 0 && policy.delay > Duration.zero) {
+        await Future<void>.delayed(policy.delay);
+      }
+      try {
+        await port.evaluateJavascript(
+          id: id,
+          source: DialogueDismissScript.source,
+        );
+      } on Exception {
+        // FR-5: dismissal is best-effort — a page-level JS failure must not
+        // propagate.
+      }
+    }
   }
 
   Future<void> disposeHeadless({required String id}) async {
