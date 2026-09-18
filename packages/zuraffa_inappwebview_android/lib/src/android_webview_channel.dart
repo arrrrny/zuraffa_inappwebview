@@ -16,10 +16,12 @@ class AndroidWebviewChannel {
   };
 
   final ChannelInvoke invoke;
+  final ChannelEventSource? eventSource;
   final Duration timeout;
 
   const AndroidWebviewChannel({
     required this.invoke,
+    this.eventSource,
     this.timeout = const Duration(seconds: 30),
   });
 
