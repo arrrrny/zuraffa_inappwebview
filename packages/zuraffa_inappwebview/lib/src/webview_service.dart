@@ -99,9 +99,9 @@ class WebviewService {
     return port.navigationEvents(id: id);
   }
 
-  /// Removes fixed/sticky overlays from the loaded page for clean captures
-  /// (spec 002). Best-effort by contract: port errors during dismissal are
-  /// swallowed and never break the caller's flow.
+  /// Hides fixed/sticky overlays from the loaded page for clean captures
+  /// (spec 002). Best-effort by contract: anything the port raises during
+  /// dismissal is swallowed and never breaks the caller's flow.
   Future<void> dismissDialogues({
     required String id,
     DialogueDismissPolicy policy = const DialogueDismissPolicy(),
@@ -116,9 +116,10 @@ class WebviewService {
           id: id,
           source: DialogueDismissScript.source,
         );
-      } on Exception {
-        // FR-5: dismissal is best-effort — a page-level JS failure must not
-        // propagate.
+      } catch (_) {
+        // FR-5: dismissal is best-effort — neither an `Exception` nor an
+        // `Error` (a `TypeError` out of an adapter decode path, a
+        // `StateError`) may propagate.
       }
     }
   }
@@ -219,6 +220,10 @@ class UnwiredWebviewPort implements WebviewPort {
   @override
   Future<List<int>?> exportPdf({required String id}) => _unwired();
 
+  /// One deliberate asymmetry with the adapters: those surface
+  /// `channel_not_wired` as a `Stream.error`, this placeholder throws
+  /// synchronously — the service's `_requireCreated` style, so an unwired
+  /// port fails fast at the call site instead of on `listen`.
   @override
   Stream<WebviewNavigationEvent> navigationEvents({required String id}) =>
       _unwired();

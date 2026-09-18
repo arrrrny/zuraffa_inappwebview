@@ -44,3 +44,31 @@ Adapter N7 groups appended after → same missing-API red in all three.
 - Dedup collapses a repeated *transition* (phase + url) within the window —
   a start/complete pair for the same url are distinct transitions and both
   survive (a url-only rule would erase completions).
+
+
+## Review follow-up (PR #3 review findings)
+
+Applied after the automated review of PR #3. The added tests were written
+alongside the fixes rather than driven red-first in the loop above — noted
+for honesty; the red→green evidence above is unchanged.
+
+- **Codec hazards closed (N1).** An unrecognized `type` used to decode as
+  `started` via `orElse`, injecting phantom transitions into the record;
+  `fromChannelArgs` now returns null for it (the adapters skip the null) and
+  raises a typed `malformed_response` for wrong-typed `url`/`isMainFrame`/
+  `code` instead of leaking a `TypeError`.
+- **Adapter decode (N7).** Map payloads are now filtered by id *before* their
+  keys are decoded, so a payload bound for another webview can no longer
+  error every subscription on the shared channel; non-map payloads keep the
+  typed `malformed_response` (FR-4). Two adapter tests per platform cover
+  the new split.
+- **Tracker cleanup (N8).** `clear(id)` drops one record and `dispose()`
+  drops every record and cancels every subscription — `_entries` previously
+  only ever grew.
+- The `UnwiredWebviewPort` sync-throw for `navigationEvents` is now
+  documented as deliberate (FR-2) rather than left as an unexplained
+  asymmetry with the adapters' `channel_not_wired` `Stream.error`.
+- Spec/tasks/test-list wording aligned (FR-1/FR-3/FR-4, N1/N7 rows, counts).
+
+Verified after the change: repo-wide 98/98 green (47 app + 6 platform +
+15 × 3 adapters) and `dart analyze` clean in all five packages.

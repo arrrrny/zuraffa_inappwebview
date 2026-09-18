@@ -9,7 +9,7 @@ void main() {
       final e = WebviewNavigationEvent.fromChannelArgs(const {
         'type': 'completed',
         'url': 'https://x.dev/',
-      });
+      })!;
       expect(e.phase, WebviewNavigationPhase.completed);
       expect(e.url, 'https://x.dev/');
       expect(e.isMainFrame, isTrue);
@@ -22,10 +22,36 @@ void main() {
         'url': 'https://x.dev/',
         'isMainFrame': false,
         'code': 'net_err',
-      });
+      })!;
       expect(e.phase, WebviewNavigationPhase.failed);
       expect(e.isMainFrame, isFalse);
       expect(e.errorCode, 'net_err');
+    });
+
+    test('N1: unrecognized phase -> null, never a phantom started', () {
+      expect(
+        WebviewNavigationEvent.fromChannelArgs(const {
+          'type': 'prerender',
+          'url': 'https://x.dev/',
+        }),
+        isNull,
+      );
+    });
+
+    test('N1: wrong-typed fields -> typed malformed_response', () {
+      for (final args in <Map<String, Object?>>[
+        {'type': 'started', 'url': 7},
+        {'type': 'started', 'url': 'https://x.dev/', 'code': 7},
+        {'type': 'started', 'url': 'https://x.dev/', 'isMainFrame': 'yes'},
+      ]) {
+        expect(
+          () => WebviewNavigationEvent.fromChannelArgs(args),
+          throwsA(
+            isA<WebviewException>()
+                .having((e) => e.code, 'code', 'malformed_response'),
+          ),
+        );
+      }
     });
   });
 
@@ -48,7 +74,7 @@ void main() {
       final sub = service.navigationEvents(id: 'w').listen(events.add);
       controller.add(
         WebviewNavigationEvent.fromChannelArgs(
-            const {'type': 'started', 'url': 'https://x.dev/'}),
+            const {'type': 'started', 'url': 'https://x.dev/'})!,
       );
       await pump();
       expect(events, hasLength(1));
@@ -113,7 +139,7 @@ void main() {
     test('N5: mainFrameOnly drops sub-frame events by default', () {
       WebviewNavigationEvent subFrame(String url) =>
           WebviewNavigationEvent.fromChannelArgs(
-              {'type': 'completed', 'url': url, 'isMainFrame': false});
+              {'type': 'completed', 'url': url, 'isMainFrame': false})!;
       final tracker = NavigationTracker();
       tracker.handleEvent('w', subFrame('https://a.dev/frame'));
       expect(tracker.entries('w'), isEmpty);
@@ -152,6 +178,34 @@ void main() {
       expect(tracker.entries('w').length, before);
       await controller.close();
     });
+
+    test('N8: clear(id) drops one record; dispose() drops all + unsubscribes',
+        () async {
+      final controller = StreamController<WebviewNavigationEvent>();
+      final tracker = NavigationTracker();
+      tracker.attach('w', controller.stream);
+      tracker.handleEvent(
+          'w', _ev(WebviewNavigationPhase.completed, 'https://a.dev/'));
+      tracker.handleEvent(
+          'other', _ev(WebviewNavigationPhase.completed, 'https://b.dev/'));
+      controller.add(_ev(WebviewNavigationPhase.completed, 'https://c.dev/'));
+      await pump();
+      expect(tracker.entries('w'), hasLength(2));
+      expect(tracker.lastUrl('w'), 'https://c.dev/');
+
+      tracker.clear('w');
+      expect(tracker.entries('w'), isEmpty);
+      expect(tracker.lastUrl('w'), isNull);
+      expect(tracker.entries('other'), hasLength(1));
+
+      tracker.dispose();
+      await pump();
+      expect(tracker.entries('other'), isEmpty);
+      controller.add(_ev(WebviewNavigationPhase.completed, 'https://d.dev/'));
+      await pump();
+      expect(tracker.entries('w'), isEmpty);
+      await controller.close();
+    });
   });
 }
 
@@ -159,7 +213,7 @@ WebviewNavigationEvent _ev(WebviewNavigationPhase phase, String url) =>
     WebviewNavigationEvent.fromChannelArgs({
       'type': phase.name,
       'url': url,
-    });
+    })!;
 
 Future<void> pump() => Future<void>.delayed(Duration.zero);
 

@@ -96,7 +96,7 @@ implement; pinning it keeps the three adapters honest.
 
 - **FR-1**: `WebviewPort.takeScreenshot({required id, ScreenshotConfiguration? config})` → `Future<List<int>?>`.
 - **FR-2**: `WebviewPort.exportPdf({required id})` → `Future<List<int>?>`.
-- **FR-3**: `ScreenshotConfiguration` (format: png default, quality: 100 default) serializes as `format`/`quality` channel args.
+- **FR-3**: `ScreenshotConfiguration` (format: png default, quality: 100 default, clamped to 1–100) serializes as `format`/`quality` channel args.
 - **FR-4**: `WebviewService` exposes both ops with the `not_created` guard, passing config and bytes through unchanged.
 - **FR-5**: Adapters forward `takeScreenshot`/`exportPdf` with id (+ config args) and decode the `data` key; non-list `data` → typed `malformed_response`; null stays null.
 - **FR-6**: `UnwiredWebviewPort` raises `port_not_wired` for both ops.

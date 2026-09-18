@@ -174,6 +174,34 @@ void main() {
       await probe;
     });
 
+    test('N7: map keyed with another id -> dropped, stream stays alive',
+        () async {
+      port = MacosWebviewPort(channel: wired());
+      final seen = <WebviewNavigationEvent>[];
+      final errors = <Object>[];
+      final sub =
+          port.navigationEvents(id: 'w').listen(seen.add, onError: errors.add);
+      events.add({'id': 'other', 3: 'x'});
+      events.add({'id': 'w', 'type': 'started', 'url': 'https://x.dev/'});
+      await Future<void>.delayed(Duration.zero);
+      expect(errors, isEmpty);
+      expect(seen, hasLength(1));
+      await sub.cancel();
+    });
+
+    test('N7: attributable payload with wrong-typed fields -> malformed',
+        () async {
+      port = MacosWebviewPort(channel: wired());
+      final probe = expectLater(
+        port.navigationEvents(id: 'w'),
+        emitsError(isA<MacosWebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+      await Future<void>.delayed(Duration.zero);
+      events.add({'id': 'w', 'type': 'started', 'url': 7});
+      await probe;
+    });
+
     test('N7: missing event source -> channel_not_wired', () async {
       port = MacosWebviewPort(
         channel: MacosWebviewChannel(invoke: (m, a) async => {'ok': true}),

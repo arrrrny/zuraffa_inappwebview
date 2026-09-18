@@ -1,18 +1,21 @@
 /// Canonical dialogue dismissal for clean captures (spec 002).
 ///
-/// Removes fixed/sticky overlays (cookie banners, chat widgets, sticky
-/// navbars) from the top-level document and resets overflow/margin so
-/// screenshots and PDF exports carry no scrollbar artifacts. Pure Dart —
-/// the script is a payload evaluated through the existing
-/// `evaluateJavascript` port op, so no new channel contract is needed.
+/// Hides fixed/sticky overlays (cookie banners, chat widgets, sticky
+/// navbars) in the top-level document and resets overflow/margin so
+/// screenshots and PDF exports carry no scrollbar artifacts. Hiding is
+/// reversible — unlike removal it cannot erase a content-bearing container
+/// (an SPA root is often `position: fixed`). Pure Dart — the script is a
+/// payload evaluated through the existing `evaluateJavascript` port op, so
+/// no new channel contract is needed.
 library;
 
-/// The canonical overlay-removal script.
+/// The canonical overlay-hiding script.
 ///
-/// Contract (spec 002, FR-2/FR-6): removes every element whose computed
-/// position is `fixed` or `sticky`, resets `overflow`/`margin` on
-/// `documentElement` and `body`, touches only the top-level document, and
-/// never throws — the whole body is guarded, returning the removed count.
+/// Contract (spec 002, FR-2/FR-6): hides every element whose computed
+/// position is `fixed` or `sticky` (`display: none`), resets
+/// `overflow`/`margin` on `documentElement` and `body`, touches only the
+/// top-level document, and never throws — the whole body is guarded,
+/// returning the count of elements taken out of the capture.
 class DialogueDismissScript {
   const DialogueDismissScript._();
 
@@ -25,7 +28,7 @@ class DialogueDismissScript {
       var el = all[i];
       var pos = window.getComputedStyle(el).position;
       if (pos === 'fixed' || pos === 'sticky') {
-        el.remove();
+        el.style.setProperty('display', 'none');
         removed++;
       }
     }

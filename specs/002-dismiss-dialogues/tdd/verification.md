@@ -19,7 +19,7 @@ tree at branch `002-dismiss-dialogues`.
 | US1-1 default off, serialized | D1 |
 | US1-2 opted-in serialized | D2 |
 | US2-1 one canonical evaluation on right id | D7 |
-| US2-2 script removes fixed/sticky + resets overflow/margin | D3, D4 |
+| US2-2 script hides fixed/sticky (`display: none`) + resets overflow/margin | D3, D4 |
 | US2-3 `not_created` for unknown id | D8 |
 | US2-4 JS errors swallowed | D9 (+ in-script try/catch) |
 | US3-1 attempts drive retries | D10 |

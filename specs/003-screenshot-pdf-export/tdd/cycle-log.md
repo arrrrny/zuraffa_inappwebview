@@ -35,3 +35,19 @@ Baseline: 5 packages, 51 tests green, analyze clean.
 
 None — the shared `_decodeBytes` helper per adapter mirrors the house
 `getCookies` decode pattern; no duplication beyond the federated triplet.
+
+
+## Review follow-up (PR #3 review findings)
+
+Applied after the automated review of PR #3. The added assertion was written
+alongside the fix, not driven red-first in the loop above.
+
+- **`quality` is clamped to 1–100.** The doc claimed the range but nothing
+  enforced it (`quality: 500` rode the envelope verbatim). The const
+  constructor now clamps with the same ternary idiom
+  `DialogueDismissPolicy.attempts` uses, and S1 pins `500 → 100` and
+  `0 / -3 → 1`.
+- Spec/test-list wording aligned (FR-3, S1 row, counts corrected).
+
+Verified after the change: app package 47/47, repo-wide 98/98 green and
+`dart analyze` clean in all five packages.

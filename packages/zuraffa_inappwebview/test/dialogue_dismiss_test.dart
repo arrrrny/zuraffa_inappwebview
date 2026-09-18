@@ -110,11 +110,12 @@ void main() {
   group('US2 — canonical script', () {
     final source = DialogueDismissScript.source;
 
-    test('D3: removes computed fixed/sticky elements', () {
+    test('D3: hides computed fixed/sticky elements (reversibly)', () {
       expect(source, contains('getComputedStyle'));
       expect(source, contains('fixed'));
       expect(source, contains('sticky'));
-      expect(source, contains('.remove()'));
+      expect(source, contains("setProperty('display', 'none')"));
+      expect(source, isNot(contains('remove()')));
     });
 
     test('D4: resets overflow/margin on documentElement and body', () {
@@ -181,6 +182,12 @@ void main() {
         port.evaluated.every((e) => e.$2 == DialogueDismissScript.source),
         isTrue,
       );
+    });
+
+    test('D11: Error subtypes during dismissal are swallowed too', () async {
+      port.evaluateHook = (_) => throw StateError('boom');
+      await service.dismissDialogues(id: 'scraper');
+      expect(port.evaluated, hasLength(1));
     });
   });
 }

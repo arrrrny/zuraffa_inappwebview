@@ -35,3 +35,23 @@ clean everywhere (T007).
 
 None needed — the implementation is three small pieces behind the existing
 facade; no duplication introduced.
+
+
+## Review follow-up (PR #3 review findings)
+
+Applied after the automated review of PR #3. These tests were written
+alongside the fixes rather than driven red-first in the loop above — noted
+for honesty; the red→green evidence above is unchanged.
+
+- **D3 flipped from removal to hiding.** The script set `el.remove()` on
+  every fixed/sticky element; SPAs commonly render the whole app into a
+  `position: fixed` root, so removal could erase content-bearing containers
+  irreversibly. It now sets `display: none` (reversible); D3 asserts the
+  reversible statement and the absence of `remove()`.
+- **D11 added.** `dismissDialogues` swallowed only `Exception`; FR-5 promises
+  dismissal "never propagates", so the catch is now total (`catch (_)`) and
+  D11 pins an `Error` (`StateError`) being swallowed too.
+- Spec/plan/tasks/test-list wording aligned (FR-2, D3 row, counts 10 → 11).
+
+Verified after the change: app package 47/47, repo-wide 98/98 green and
+`dart analyze` clean in all five packages.

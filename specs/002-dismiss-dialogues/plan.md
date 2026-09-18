@@ -1,4 +1,4 @@
-# Implementation Plan: Dismiss Dialogues — Clean-Capture Overlay Removal
+# Implementation Plan: Dismiss Dialogues — Clean-Capture Overlay Hiding
 
 **Branch**: `002-dismiss-dialogues` | **Date**: 2026-09-17 | **Spec**: [spec.md](spec.md)
 
@@ -6,8 +6,8 @@
 
 Add the zikzak dialogue-dismissal feature to the clean API as three pieces:
 a typed `WebviewSettings.dismissDialogues` flag riding the channel envelope,
-a canonical pure-Dart `DialogueDismissScript` (removes top-level
-fixed/sticky elements + resets overflow/margin), and a best-effort
+a canonical pure-Dart `DialogueDismissScript` (hides top-level fixed/sticky
+elements via `display: none` + resets overflow/margin), and a best-effort
 `WebviewService.dismissDialogues(id, policy)` facade op with a retry policy
 for late-loading overlays.
 
@@ -63,9 +63,9 @@ test/
 | `DialogueDismissPolicy` | `attempts: int` (min 1, default 1), `delay: Duration` (default 0) | n/a |
 
 The canonical script: query all elements in `document`, read computed
-`position`, remove `fixed`/`sticky` ones, then reset `overflow`/`margin` on
-`documentElement` and `body`. Guarded by try/catch inside the script and
-never touches `window.frames` (FR-6).
+`position`, hide `fixed`/`sticky` ones (`display: none`, reversible), then
+reset `overflow`/`margin` on `documentElement` and `body`. Guarded by
+try/catch inside the script and never touches `window.frames` (FR-6).
 
 ## contracts/
 

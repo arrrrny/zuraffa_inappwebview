@@ -4,6 +4,8 @@ library;
 
 import 'dart:async';
 
+import 'webview_exception.dart';
+
 /// The phase of a navigation event (channel key `type`).
 enum WebviewNavigationPhase { started, completed, failed }
 
@@ -25,20 +27,46 @@ class WebviewNavigationEvent {
 
   /// Codec from channel args: `type`, `url`, `isMainFrame` (default true),
   /// `code` (optional).
-  static WebviewNavigationEvent fromChannelArgs(
+  ///
+  /// Returns null when `type` names no known phase: an unrecognized phase is
+  /// skipped rather than coerced to [WebviewNavigationPhase.started], so a
+  /// native phase this build doesn't know yet cannot inject phantom
+  /// `started` transitions that would skew dedup and
+  /// [NavigationTracker.hasCycle]. Adapter streams drop the null.
+  ///
+  /// Wrong-typed fields are the typed `malformed_response` failure instead of
+  /// a bare `TypeError` escaping the stream as an untyped error.
+  static WebviewNavigationEvent? fromChannelArgs(
     Map<String, Object?> args, {
     DateTime? at,
-  }) =>
-      WebviewNavigationEvent(
-        phase: WebviewNavigationPhase.values.firstWhere(
-          (p) => p.name == args['type'],
-          orElse: () => WebviewNavigationPhase.started,
-        ),
-        url: args['url'] as String? ?? '',
-        isMainFrame: args['isMainFrame'] as bool? ?? true,
-        errorCode: args['code'] as String?,
-        at: at,
+  }) {
+    final phase = _phaseNamed(args['type']);
+    if (phase == null) return null;
+    final url = args['url'];
+    final isMainFrame = args['isMainFrame'];
+    final code = args['code'];
+    if (url is! String? || isMainFrame is! bool? || code is! String?) {
+      throw const WebviewException(
+        'malformed_response',
+        'A navigation event carried wrong-typed fields.',
+        recoverable: false,
       );
+    }
+    return WebviewNavigationEvent(
+      phase: phase,
+      url: url ?? '',
+      isMainFrame: isMainFrame ?? true,
+      errorCode: code,
+      at: at,
+    );
+  }
+
+  static WebviewNavigationPhase? _phaseNamed(Object? name) {
+    for (final phase in WebviewNavigationPhase.values) {
+      if (phase.name == name) return phase;
+    }
+    return null;
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -103,6 +131,22 @@ class NavigationTracker {
   /// Stops recording for [id] (keeps the record accumulated so far).
   void detach(String id) {
     _subs.remove(id)?.cancel();
+  }
+
+  /// Drops the recorded visits for [id]. [detach] deliberately keeps them, so
+  /// this is the cleanup hook for a webview id that is gone for good.
+  void clear(String id) {
+    _entries.remove(id);
+  }
+
+  /// Cancels every subscription and drops every record — for a tracker that
+  /// is itself being torn down. The instance stays usable afterwards.
+  void dispose() {
+    for (final sub in _subs.values) {
+      sub.cancel();
+    }
+    _subs.clear();
+    _entries.clear();
   }
 
   /// Records one event. Pure — no webview required. Timing authority is

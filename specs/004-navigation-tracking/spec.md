@@ -106,10 +106,10 @@ filtered out, non-map payloads surface the adapter's typed
 
 ## Requirements
 
-- **FR-1**: `WebviewNavigationEvent` (phase/url/isMainFrame/errorCode/at) with `fromChannelArgs` codec (`type` key maps to phase).
-- **FR-2**: `WebviewPort.navigationEvents({required id})` → `Stream<WebviewNavigationEvent>`; service passthrough with the `not_created` guard; unwired → `port_not_wired`.
-- **FR-3**: `NavigationTracker` — `attach`/`detach`/`handleEvent`/`entries`/`lastUrl`/`hasCycle`; dedup window 500ms default (injectable clock); `mainFrameOnly` default true.
-- **FR-4**: Adapter channels accept an optional `eventSource`; `navigationEvents` filters by id, decodes typed, `malformed_response` on non-map, `channel_not_wired` when absent; register forwards `eventSource` when re-wrapping for timeout.
+- **FR-1**: `WebviewNavigationEvent` (phase/url/isMainFrame/errorCode/at) with `fromChannelArgs` codec (`type` key maps to phase). An unrecognized `type` decodes to null — skipped, never coerced to `started`; wrong-typed fields fail typed (`malformed_response`).
+- **FR-2**: `WebviewPort.navigationEvents({required id})` → `Stream<WebviewNavigationEvent>`; service passthrough with the `not_created` guard; unwired → `port_not_wired` (the placeholder port throws synchronously, the service's guard style).
+- **FR-3**: `NavigationTracker` — `attach`/`detach`/`handleEvent`/`entries`/`lastUrl`/`hasCycle`/`clear`/`dispose`; dedup window 500ms default (injectable clock); `mainFrameOnly` default true.
+- **FR-4**: Adapter channels accept an optional `eventSource`; `navigationEvents` filters map payloads by id *before* decoding them (a payload bound for another webview can't error this stream), decodes typed, `malformed_response` on non-map or on unusable/wrong-typed fields, `channel_not_wired` when absent; register forwards `eventSource` when re-wrapping for timeout.
 - **FR-5**: Platform package exports the `ChannelEventSource` typedef.
 
 ### Key Entities

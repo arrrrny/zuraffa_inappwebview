@@ -119,18 +119,53 @@ class IosWebviewPort implements WebviewPort {
         recoverable: false,
       ));
     }
-    return source('navigationEvents').asyncMap((raw) {
-      if (raw is! Map) {
-        throw const IosWebviewException(
-          'malformed_response',
-          'A navigation event carried a non-map payload.',
-          recoverable: false,
-        );
-      }
-      return Map<String, Object?>.from(raw);
-    }).where((map) => map['id'] == id).map(
-          WebviewNavigationEvent.fromChannelArgs,
-        );
+    // A non-map payload carries no id, so it cannot be attributed: that is
+    // the typed `malformed_response` (FR-4). Map payloads are filtered by id
+    // *before* their keys are decoded, so a payload bound for another
+    // webview can never error this subscription's stream.
+    return source('navigationEvents')
+        .map(_requirePayload)
+        .where((payload) => payload['id'] == id)
+        // A null here means the phase wasn't recognized: the event is
+        // skipped rather than coerced to `started`.
+        .map(_decodeNavigationEvent)
+        .where((event) => event != null)
+        .cast<WebviewNavigationEvent>();
+  }
+
+  Map<Object?, Object?> _requirePayload(Object? raw) {
+    if (raw is! Map) {
+      throw const IosWebviewException(
+        'malformed_response',
+        'A navigation event carried a non-map payload.',
+        recoverable: false,
+      );
+    }
+    return raw;
+  }
+
+  WebviewNavigationEvent? _decodeNavigationEvent(
+    Map<Object?, Object?> payload,
+  ) {
+    final Map<String, Object?> args;
+    try {
+      args = Map<String, Object?>.from(payload);
+    } on TypeError {
+      throw const IosWebviewException(
+        'malformed_response',
+        'A navigation event carried unusable keys.',
+        recoverable: false,
+      );
+    }
+    try {
+      return WebviewNavigationEvent.fromChannelArgs(args);
+    } on WebviewException catch (failure) {
+      throw IosWebviewException(
+        failure.code,
+        failure.message,
+        recoverable: false,
+      );
+    }
   }
 
   @override

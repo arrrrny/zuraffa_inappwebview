@@ -55,17 +55,18 @@ alone does nothing on the Dart side.
 
 **Independent Test**: Drive a fake port that records `evaluateJavascript`
 sources; assert the shipped script is evaluated on the right id and that the
-script source removes fixed/sticky elements and resets overflow/margin.
+script source hides fixed/sticky elements and resets overflow/margin.
 
 **Acceptance Scenarios**:
 
 1. **Given** a created headless webview, **When** `dismissDialogues(id)` is
    called, **Then** the port receives one `evaluateJavascript` call whose
    source is the canonical `DialogueDismissScript.source`.
-2. **Given** the canonical script, **When** inspected, **Then** it removes
-   `position: fixed`/`position: sticky` elements, resets
-   `documentElement`/`body` overflow and margin, and touches only the
-   top-level document (no iframe recursion).
+2. **Given** the canonical script, **When** inspected, **Then** it hides
+   `position: fixed`/`position: sticky` elements (`display: none`, so a
+   retry can still restore them), resets `documentElement`/`body` overflow
+   and margin, and touches only the top-level document (no iframe
+   recursion).
 3. **Given** an id that was never created, **When** `dismissDialogues(id)` is
    called, **Then** it throws the typed `not_created` failure.
 4. **Given** the port raises a JS evaluation error for the dismissal call,
@@ -103,8 +104,9 @@ port received exactly `attempts` evaluations.
 - **FR-1**: `WebviewSettings` gains `dismissDialogues` (bool, default
   `false`), serialized in `toChannelArgs()` as `dismissDialogues`.
 - **FR-2**: A pure-Dart canonical script (`DialogueDismissScript.source`)
-  removes top-level `position: fixed`/`position: sticky` elements and resets
-  `overflow`/`margin` on `documentElement` and `body`.
+  hides top-level `position: fixed`/`position: sticky` elements
+  (`display: none`, so removal is reversible) and resets `overflow`/`margin`
+  on `documentElement` and `body`.
 - **FR-3**: `WebviewService.dismissDialogues({id, policy})` evaluates the
   canonical script through the port, once per policy attempt, with the
   policy delay between attempts.

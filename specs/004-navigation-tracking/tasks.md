@@ -4,7 +4,7 @@
 
 ## Phase 1: Event seam (app + platform)
 
-- [x] T001 `[TDD]` (US1, N1) `WebviewNavigationEvent` codec: decode started/completed/failed, isMainFrame default, errorCode passthrough — `navigation_tracking.dart`
+- [x] T001 `[TDD]` (US1, N1) `WebviewNavigationEvent` codec: decode started/completed/failed, isMainFrame default, errorCode passthrough, unrecognized phase → null, wrong-typed fields → typed `malformed_response` — `navigation_tracking.dart`
 - [x] T002 `[TDD]` (US1, N2) port `navigationEvents` + service passthrough with `not_created` + unwired `port_not_wired`
 - [x] T003 platform: `ChannelEventSource` typedef exported (wiring, compile-checked)
 
@@ -13,7 +13,7 @@
 - [x] T004 `[TDD]` (US2, N3) ordered entries + lastUrl via handleEvent
 - [x] T005 `[TDD]` (US2, N4) dedup window collapse (injected clock)
 - [x] T006 `[TDD]` (US2, N5) mainFrameOnly drops sub-frame events
-- [x] T007 `[TDD]` (US2, N6) hasCycle A→B→A true / A→B→C false; attach/detach stops recording
+- [x] T007 `[TDD]` (US2, N6) hasCycle A→B→A true / A→B→C false; attach/detach stops recording; `clear(id)`/`dispose()` cleanup (N8)
 
 ## Phase 3: Adapters
 

@@ -98,6 +98,21 @@ void main() {
         {'format': 'jpeg', 'quality': 80},
       );
     });
+
+    test('S1: quality is clamped to 1–100', () {
+      expect(
+        const ScreenshotConfiguration(quality: 500).toChannelArgs(),
+        {'format': 'png', 'quality': 100},
+      );
+      expect(
+        const ScreenshotConfiguration(quality: 0).toChannelArgs(),
+        {'format': 'png', 'quality': 1},
+      );
+      expect(
+        const ScreenshotConfiguration(quality: -3).toChannelArgs(),
+        {'format': 'png', 'quality': 1},
+      );
+    });
   });
 
   group('US1 — service passthrough', () {
