@@ -78,6 +78,13 @@ class IosWebviewPort implements WebviewPort {
     return result?['html'] as String?;
   }
 
+  /// Captures the page as raw image bytes; `null` when the platform could
+  /// not capture (spec 003).
+  ///
+  /// Captures are MB-scale, so whatever `ChannelInvoke` transport the native
+  /// milestone ships, `data` should be encoded binary-first
+  /// (`Uint8List`/byte buffer): a ~3 MB PNG arrives as a ~10-20 MB list of
+  /// boxed ints if it is carried JSON-style.
   @override
   Future<List<int>?> takeScreenshot({
     required String id,
@@ -90,6 +97,9 @@ class IosWebviewPort implements WebviewPort {
     return _decodeBytes(result?['data']);
   }
 
+  /// Exports the page as PDF bytes; `null` on failure (spec 003).
+  ///
+  /// Same binary-first note as [takeScreenshot] — PDFs are MB-scale too.
   @override
   Future<List<int>?> exportPdf({required String id}) async {
     final result = await channel.call('exportPdf', {'id': id});
@@ -105,7 +115,17 @@ class IosWebviewPort implements WebviewPort {
         recoverable: false,
       );
     }
-    return [for (final b in raw) b as int];
+    return [
+      for (final b in raw)
+        if (b is int)
+          b
+        else
+          throw const IosWebviewException(
+            'malformed_response',
+            'The capture data list carried a non-int byte.',
+            recoverable: false,
+          ),
+    ];
   }
 
   @override

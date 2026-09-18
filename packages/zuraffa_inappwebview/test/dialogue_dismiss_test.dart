@@ -109,6 +109,13 @@ void main() {
       expect(source, contains('fixed'));
       expect(source, contains('sticky'));
       expect(source, contains('.remove()'));
+      // Guard shape: the body is an IIFE wrapped in try/catch. The
+      // substring checks above mirror the implementation, so pinning the
+      // shape is what keeps the never-throw contract from regressing
+      // silently. (VM-only gap: no JS runtime in this test stack.)
+      expect(source.trimLeft(), startsWith('(function'));
+      expect(source, contains('try'));
+      expect(source, contains('catch'));
     });
 
     test('D4: resets overflow/margin on documentElement and body', () {

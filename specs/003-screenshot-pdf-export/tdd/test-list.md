@@ -11,4 +11,4 @@
 | S6b | ios adapter: same contract | T004 | DONE |
 | S6c | macos adapter: same contract | T005 | DONE |
 
-Counts: 9 behaviors (S6×3 counted per platform), 0 covered, 9 to drive.
+Counts: 9 behaviors — 9 driven red → green, 0 remaining.
