@@ -41,3 +41,24 @@ test stream isolation) — assertions were not weakened.
   bodies carry urlencoded forms in practice; the seam
   (`CaptureSecretRedactor`) is public and extensible.
 - The JS injector + native push are the native milestone.
+
+## Review-fix round (PR #4 findings)
+
+| Finding (thread) | Verdict | Covered by |
+|---|---|---|
+| `network_capture.dart:143` redactor throws on malformed percent-encoding | applied | C8 |
+| `network_capture.dart:167` / `navigation_tracking.dart:98` `attach` without `onError` | applied | C9, N9 |
+| `network_capture.dart:188` `maxBodyBytes` counts code units, splits surrogates | applied (true UTF-8 bytes) | C10 |
+| `network_capture.dart:95` redaction sets miss common carriers | applied | C11 |
+| adapters ×3 decode before the id filter | applied (filter raw payloads first) | C7/N8 ×3 |
+| adapters ×3 `_decodeBytes` raw `TypeError` + payload copy | applied | S6 ×3 |
+| `network_capture.dart:59` `matches` has no production call site | documented as a consumer utility | — |
+| `navigation_tracking.dart:36` unknown `type` becomes `started` | applied (`unknown` phase) | N8 |
+| `navigation_tracking.dart:94` unbounded per-id record | applied (`clear(id)`) | N8 |
+| `webview_types.dart:110` `quality` unvalidated | applied (clamped 1–100) | S7 |
+| `dialogue_dismiss_test.dart:147` D3–D5 keyword pinning | documented as contract-pinning | — |
+| `specs/005/tasks.md` + `tdd/test-list.md` committed empty | applied | T020 |
+
+Tests: 108 → 128 (20 review-driven regression tests); every new test was
+verified to fail on the pre-fix head. Analyze clean across all five
+packages.

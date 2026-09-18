@@ -3,6 +3,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 /// One intercepted XHR/fetch exchange pushed by the platform.
 class WebviewCaptureEntry {
@@ -43,6 +44,11 @@ class WebviewCaptureEntry {
 
 /// Capture filter riding the enable call (spec 005 FR-1): a
 /// case-insensitive URL substring plus a body byte cap.
+///
+/// The filter ships to the platform via `setCaptureEnabled`; [matches] is
+/// the client-side counterpart for consumers that want to double-check an
+/// entry (the manager itself does not filter — native filtering is
+/// authoritative).
 class WebviewCaptureFilter {
   final String? urlPattern;
   final int? maxBodyBytes;
@@ -61,7 +67,7 @@ class WebviewCaptureFilter {
 
 /// Bounded retention policy applied at ingestion (spec 005 FR-3):
 /// [maxEntries] keeps the latest entries when exceeded; [maxBodyBytes]
-/// truncates string bodies.
+/// truncates string bodies to that many UTF-8 bytes.
 class CaptureBudget {
   final int maxEntries;
   final int maxBodyBytes;
@@ -80,6 +86,10 @@ const Set<String> _redactedHeaderKeys = {
   'proxy-authorization',
   'cookie',
   'set-cookie',
+  'x-api-key',
+  'x-csrf-token',
+  'x-auth-token',
+  'x-amz-security-token',
 };
 
 const Set<String> _redactedParamKeys = {
@@ -92,6 +102,12 @@ const Set<String> _redactedParamKeys = {
   'access_token',
   'refresh_token',
   'client_secret',
+  'key',
+  'signature',
+  'sig',
+  'hmac',
+  'session_id',
+  'auth',
 };
 
 /// Source-level redaction of auth-shaped secrets (spec 005 FR-4):
@@ -132,7 +148,18 @@ class CaptureSecretRedactor {
         kept.add(part);
         continue;
       }
-      final key = Uri.decodeQueryComponent(part.substring(0, eq));
+      final rawKey = part.substring(0, eq);
+      // Urls are page-controlled: a malformed percent-encoding (`%FF`, a
+      // truncated sequence) must not throw out of `ingest`, so fall back
+      // to the raw key when decoding fails.
+      String key;
+      try {
+        key = Uri.decodeQueryComponent(rawKey);
+      } on FormatException {
+        key = rawKey;
+      } on ArgumentError {
+        key = rawKey;
+      }
       kept.add(
         _redactedParamKeys.contains(key.toLowerCase())
             ? '$key=$kRedactionMarker'
@@ -161,9 +188,26 @@ class NetworkCaptureManager {
 
   /// Records entries from [events] under [id], replacing any previous
   /// subscription. Cancel with [detach].
+  ///
+  /// Adapter streams surface typed data-plane errors by contract
+  /// (`malformed_response`, `channel_not_wired`); they are contained here so
+  /// one bad native payload never becomes an unhandled async error in the
+  /// consumer's zone. A caller that subscribes to a stream manually must
+  /// pass its own `onError`.
   void attach(String id, Stream<WebviewCaptureEntry> events) {
     _subs[id]?.cancel();
-    _subs[id] = events.listen((e) => ingest(id, e));
+    _subs[id] = events.listen(
+      (e) => ingest(id, e),
+      onError: (Object error) {
+        // Contained: a stream error is data-plane noise, not a reason to
+        // tear down the consumer's zone.
+        assert(() {
+          // ignore: avoid_print
+          print('NetworkCaptureManager: capture stream error for $id: $error');
+          return true;
+        }());
+      },
+    );
   }
 
   /// Stops recording for [id] (keeps the buffered entries).
@@ -176,14 +220,17 @@ class NetworkCaptureManager {
     final buffered = _entries.putIfAbsent(id, () => []);
     var e = redactAuth ? _redactor.redact(entry) : entry;
     if (e.requestBody != null &&
-        e.requestBody!.length > budget.maxBodyBytes) {
-      e = _copyWith(e, requestBody: e.requestBody!.substring(0, budget.maxBodyBytes));
-    }
-    if (e.responseBody != null &&
-        e.responseBody!.length > budget.maxBodyBytes) {
+        utf8.encode(e.requestBody!).length > budget.maxBodyBytes) {
       e = _copyWith(
         e,
-        responseBody: e.responseBody!.substring(0, budget.maxBodyBytes),
+        requestBody: _truncateUtf8(e.requestBody!, budget.maxBodyBytes),
+      );
+    }
+    if (e.responseBody != null &&
+        utf8.encode(e.responseBody!).length > budget.maxBodyBytes) {
+      e = _copyWith(
+        e,
+        responseBody: _truncateUtf8(e.responseBody!, budget.maxBodyBytes),
       );
     }
     buffered.add(e);
@@ -214,4 +261,17 @@ class NetworkCaptureManager {
         responseBody: responseBody ?? e.responseBody,
         at: e.at,
       );
+}
+
+/// Truncates [body] to at most [maxBytes] UTF-8 bytes, cutting on a
+/// character boundary so no multi-byte sequence is split (a split
+/// surrogate would encode to U+FFFD — silent corruption of the body).
+String _truncateUtf8(String body, int maxBytes) {
+  final bytes = utf8.encode(body);
+  if (bytes.length <= maxBytes) return body;
+  var end = maxBytes;
+  while (end > 0 && (bytes[end] & 0xC0) == 0x80) {
+    end--;
+  }
+  return utf8.decode(bytes.sublist(0, end));
 }

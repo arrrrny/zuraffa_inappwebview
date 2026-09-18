@@ -108,6 +108,18 @@ void main() {
         {'format': 'jpeg', 'quality': 80},
       );
     });
+
+    test('S7: quality clamps to the documented 1–100 range', () {
+      expect(const ScreenshotConfiguration(quality: 0).quality, 1);
+      expect(const ScreenshotConfiguration(quality: -5).quality, 1);
+      expect(const ScreenshotConfiguration(quality: 101).quality, 100);
+      expect(const ScreenshotConfiguration(quality: 80).quality, 80);
+      expect(
+        const ScreenshotConfiguration(quality: 400)
+            .toChannelArgs()['quality'],
+        100,
+      );
+    });
   });
 
   group('US1 — service passthrough', () {

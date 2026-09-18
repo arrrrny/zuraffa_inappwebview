@@ -48,6 +48,8 @@ A caller wants a JPEG at quality 80:
 `service.takeScreenshot(id, config: ScreenshotConfiguration(format: ScreenshotFormat.jpeg, quality: 80))`.
 The configuration serializes to channel args (`format`, `quality`) with
 pinned defaults (png, quality 100); the adapter forwards it verbatim.
+`quality` is documented 1–100 and clamped in the constructor, so an
+out-of-range value never reaches the platform.
 
 **Why this priority**: Format/quality covers the real capture needs
 (thumbnails, small transfers); rect-capture is a documented follow-up.

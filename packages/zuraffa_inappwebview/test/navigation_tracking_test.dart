@@ -153,6 +153,55 @@ void main() {
       await controller.close();
     });
   });
+
+  group('review-fix hardening', () {
+    test('N8: an unknown type decodes to unknown, never to started', () {
+      final e = WebviewNavigationEvent.fromChannelArgs(const {
+        'type': 'redirected', // a forward-compat native rename
+        'url': 'https://x.dev/',
+      });
+      expect(e.phase, WebviewNavigationPhase.unknown);
+      final tracker = NavigationTracker();
+      tracker.handleEvent('w', e);
+      expect(
+        tracker.entries('w').single.phase,
+        WebviewNavigationPhase.unknown,
+      );
+    });
+
+    test('N8: clear drops the recorded visits', () {
+      final tracker = NavigationTracker();
+      tracker.handleEvent(
+        'w',
+        _ev(WebviewNavigationPhase.started, 'https://a.dev/'),
+      );
+      tracker.clear('w');
+      expect(tracker.entries('w'), isEmpty);
+      expect(tracker.lastUrl('w'), isNull);
+      expect(tracker.hasCycle('w'), isFalse);
+    });
+
+    test('N9: attach contains stream errors instead of crashing the zone',
+        () async {
+      final controller = StreamController<WebviewNavigationEvent>();
+      final tracker = NavigationTracker();
+      tracker.attach('w', controller.stream);
+      controller.addError(
+        const WebviewException(
+          'malformed_response',
+          'bad native payload',
+          recoverable: false,
+        ),
+      );
+      await pump();
+      controller.add(
+        _ev(WebviewNavigationPhase.completed, 'https://a.dev/'),
+      );
+      await pump();
+      expect(tracker.entries('w').single.url, 'https://a.dev/');
+      await controller.close();
+    });
+  });
 }
 
 WebviewNavigationEvent _ev(WebviewNavigationPhase phase, String url) =>

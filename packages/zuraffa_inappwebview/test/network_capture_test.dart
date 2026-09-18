@@ -175,6 +175,76 @@ void main() {
       expect(manager.entries('w').last.responseBody, hasLength(10));
     });
   });
+
+  group('review-fix hardening', () {
+    test('C8: malformed percent-encoding in a query key never throws', () {
+      final manager = NetworkCaptureManager();
+      // Urls are page-controlled: a bad (`a%FF`) or truncated (`b%`)
+      // sequence must not throw out of ingest.
+      manager.ingest(
+        'w',
+        _entry(url: 'https://x.dev/p?token=abc&a%FF=1&b%=2&keep=1'),
+      );
+      final e = manager.entries('w').single;
+      expect(e.url, contains('token=<redacted>'));
+      expect(e.url, contains('keep=1'));
+      expect(e.url, contains('a%FF=1'));
+      expect(e.url, contains('b%=2'));
+    });
+
+    test('C9: attach contains stream errors instead of crashing the zone',
+        () async {
+      final controller = StreamController<WebviewCaptureEntry>();
+      final manager = NetworkCaptureManager();
+      manager.attach('w', controller.stream);
+      controller.addError(
+        const WebviewException(
+          'malformed_response',
+          'bad native payload',
+          recoverable: false,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      controller.add(_entry(url: 'https://x.dev/after-error'));
+      await Future<void>.delayed(Duration.zero);
+      expect(manager.entries('w').single.url, 'https://x.dev/after-error');
+      await controller.close();
+    });
+
+    test('C10: maxBodyBytes cuts on a UTF-8 boundary', () {
+      final manager = NetworkCaptureManager(
+        budget: const CaptureBudget(maxBodyBytes: 4),
+      );
+      manager.ingest(
+        'w',
+        _entry(requestBody: 'ééé', responseBody: 'a😀b'),
+      );
+      final e = manager.entries('w').single;
+      // 'a😀b' is 6 bytes; 4 bytes fits only 'a' — the old char-based cut
+      // kept the whole 3-character body.
+      expect(e.responseBody, 'a');
+      expect(e.requestBody, 'éé');
+      expect(e.responseBody, isNot(contains('\uFFFD')));
+      expect(e.requestBody, isNot(contains('\uFFFD')));
+    });
+
+    test('C11: widened secret carriers are redacted too', () {
+      final manager = NetworkCaptureManager();
+      manager.ingest(
+        'w',
+        _entry(
+          url: 'https://x.dev/p?session_id=abc&signature=sig&keep=1',
+          requestHeaders: {'X-Api-Key': 'k', 'X-Amz-Security-Token': 't'},
+        ),
+      );
+      final e = manager.entries('w').single;
+      expect(e.requestHeaders['X-Api-Key'], '<redacted>');
+      expect(e.requestHeaders['X-Amz-Security-Token'], '<redacted>');
+      expect(e.url, contains('session_id=<redacted>'));
+      expect(e.url, contains('signature=<redacted>'));
+      expect(e.url, contains('keep=1'));
+    });
+  });
 }
 
 class _CaptureFakePort implements WebviewPort {

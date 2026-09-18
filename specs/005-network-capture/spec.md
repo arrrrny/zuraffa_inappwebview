@@ -70,19 +70,24 @@ truncation.
    **Then** they come back in ingestion order; `clear(id)` empties them.
 2. **Given** `maxEntries: 2` and 3 ingested, **When** read, **Then** the
    latest 2 remain.
-3. **Given** `maxBodyBytes: 10` and a body of 100 characters, **When**
-   ingested, **Then** the stored body is 10 characters.
+3. **Given** `maxBodyBytes: 10` and a body of 100 ASCII bytes, **When**
+   ingested, **Then** the stored body is 10 bytes; a multi-byte body is cut
+   on a character boundary so no character is split.
 
 ---
 
 ### User Story 3 - Source-level secret redaction (Priority: P1)
 
 Auth-shaped secrets are redacted **at the source, before any consumer
-observes them** (zikzak A15): header keys
-`authorization/proxy-authorization/cookie/set-cookie` and URL query params
+observes them** (zikzak A15, widened): header keys
+`authorization/proxy-authorization/cookie/set-cookie` plus
+`x-api-key/x-csrf-token/x-auth-token/x-amz-security-token`, and URL query
+params
 `api_key/apikey/password/passwd/secret/token/access_token/refresh_token/client_secret`
-become `<redacted>` at ingestion. Redaction is on by default and can be
-disabled for trusted contexts.
+plus `key/signature/sig/hmac/session_id/auth` become `<redacted>` at
+ingestion. Redaction is on by default and can be disabled for trusted
+contexts. A malformed percent-encoding in a query key never throws: the
+redactor falls back to the raw key.
 
 **Why this priority**: Capture output feeds logs, cassettes, and agent
 contexts — leaking bearer tokens there is the catastrophic failure.
@@ -115,8 +120,9 @@ android/ios/macos pin the channel contract: call method
 **Acceptance Scenarios**:
 
 1. **Given** a scripted event `{'id':'w','url':…,'method':'GET',…}`,
-   **When** subscribed, **Then** the decoded typed entry arrives; foreign
-   ids are filtered.
+   **When** subscribed, **Then** the decoded typed entry arrives; raw
+   payloads are filtered by `id` before decoding, so a foreign payload can
+   never error this subscription.
 2. **Given** a non-map event, **When** subscribed, **Then** the stream
    errors `malformed_response`.
 3. **Given** no event source, **When** subscribing, **Then**
@@ -128,8 +134,8 @@ android/ios/macos pin the channel contract: call method
 
 - **FR-1**: `WebviewCaptureEntry` + codec; `WebviewCaptureFilter` (urlPattern, maxBodyBytes) serializable.
 - **FR-2**: Port ops `setCaptureEnabled` + `captureEvents`; service guards; unwired failures.
-- **FR-3**: `NetworkCaptureManager` — attach/detach/ingest/entries/clear; `CaptureBudget` (maxEntries keeps latest, maxBodyBytes truncates) applied at ingest.
-- **FR-4**: `CaptureSecretRedactor` semantics as US3 (marker `<redacted>`, case-insensitive key match), applied at ingest by default.
+- **FR-3**: `NetworkCaptureManager` — attach/detach/ingest/entries/clear; `CaptureBudget` (maxEntries keeps latest, maxBodyBytes truncates to UTF-8 bytes on a character boundary) applied at ingest; `attach` contains stream errors.
+- **FR-4**: `CaptureSecretRedactor` semantics as US3 (marker `<redacted>`, case-insensitive key match, tolerant of malformed percent-encoding), applied at ingest by default.
 - **FR-5**: Adapter mapping per US4.
 
 ### Key Entities

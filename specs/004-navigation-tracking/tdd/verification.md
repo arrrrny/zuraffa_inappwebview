@@ -43,3 +43,15 @@ behavior level, not by weakening assertions.
   `UrlVisit` later without breaking the record format.
 - Native event push is the native milestone; the Dart contract (method +
   payload shape) is pinned by N7.
+
+## Review-fix round (PR #4 findings)
+
+| Finding | Verdict | Covered by |
+|---|---|---|
+| `navigation_tracking.dart:36` unknown `type` silently became `started` | applied — `WebviewNavigationPhase.unknown` surfaces the gap | N8 |
+| `navigation_tracking.dart:94` per-id record grows without bound | applied — `clear(id)` drops the record | N8 |
+| `navigation_tracking.dart:98` `attach` without `onError` | applied — errors contained | N9 |
+| adapters ×3 decode before the id filter | applied — raw payloads filtered by `id` first | N8 ×3 |
+
+All four new tests were verified to fail on the pre-fix head; the suite is
+128/128 green and analyze is clean.

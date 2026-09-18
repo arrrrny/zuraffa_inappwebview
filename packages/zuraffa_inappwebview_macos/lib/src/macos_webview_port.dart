@@ -98,14 +98,14 @@ class MacosWebviewPort implements WebviewPort {
 
   List<int>? _decodeBytes(Object? raw) {
     if (raw == null) return null;
-    if (raw is! List) {
-      throw const MacosWebviewException(
-        'malformed_response',
-        'The capture result carried a non-list data payload.',
-        recoverable: false,
-      );
-    }
-    return [for (final b in raw) b as int];
+    // A Uint8List/List<int> from the platform codec already satisfies the
+    // contract — return it as-is instead of copying multi-MB payloads.
+    if (raw is List<int>) return raw;
+    throw const MacosWebviewException(
+      'malformed_response',
+      'The capture result carried a non-int byte payload.',
+      recoverable: false,
+    );
   }
 
   @override
@@ -119,7 +119,12 @@ class MacosWebviewPort implements WebviewPort {
         recoverable: false,
       ));
     }
-    return source('navigationEvents').asyncMap((raw) {
+    // Foreign payloads are dropped before decoding, so a malformed event
+    // for another webview can never error this subscription; a non-map
+    // payload still surfaces the typed `malformed_response` (US4-2).
+    return source('navigationEvents')
+        .where((raw) => raw is! Map || raw['id'] == id)
+        .asyncMap((raw) {
       if (raw is! Map) {
         throw const MacosWebviewException(
           'malformed_response',
@@ -128,9 +133,7 @@ class MacosWebviewPort implements WebviewPort {
         );
       }
       return Map<String, Object?>.from(raw);
-    }).where((map) => map['id'] == id).map(
-          WebviewNavigationEvent.fromChannelArgs,
-        );
+    }).map(WebviewNavigationEvent.fromChannelArgs);
   }
 
   @override
@@ -157,7 +160,12 @@ class MacosWebviewPort implements WebviewPort {
         recoverable: false,
       ));
     }
-    return source('captureEvents').asyncMap((raw) {
+    // Same id-scoping as navigationEvents: foreign payloads are dropped
+    // before decoding, while a non-map payload still surfaces the typed
+    // `malformed_response`.
+    return source('captureEvents')
+        .where((raw) => raw is! Map || raw['id'] == id)
+        .asyncMap((raw) {
       if (raw is! Map) {
         throw const MacosWebviewException(
           'malformed_response',
@@ -166,9 +174,7 @@ class MacosWebviewPort implements WebviewPort {
         );
       }
       return Map<String, Object?>.from(raw);
-    }).where((map) => map['id'] == id).map(
-          WebviewCaptureEntry.fromChannelArgs,
-        );
+    }).map(WebviewCaptureEntry.fromChannelArgs);
   }
 
   @override

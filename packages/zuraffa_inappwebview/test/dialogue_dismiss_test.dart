@@ -117,6 +117,11 @@ void main() {
     });
   });
 
+  // D3–D5 are contract-pinning tests: they pin the shape of the canonical
+  // script payload handed to the platform, not its runtime effect. A JS
+  // engine only exists in the native shell, so behavioral coverage of the
+  // script belongs to the adapter/e2e tier where `evaluateJavascript`
+  // actually runs.
   group('US2 — canonical script', () {
     final source = DialogueDismissScript.source;
 

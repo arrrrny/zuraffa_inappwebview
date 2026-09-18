@@ -17,3 +17,8 @@
 
 - [x] T006 barrel exports (`ScreenshotConfiguration`, `ScreenshotFormat`) + adapter doc-comment contract lists
 - [x] T007 repo-wide analyze + tests green
+
+## Phase 4: Review-fix round (PR #4 findings)
+
+- [x] T008 `[TDD]` (US2, S7) `ScreenshotConfiguration.quality` clamped to 1–100 in the constructor
+- [x] T009 `[TDD]` (US3, S6) adapter `_decodeBytes` returns a `List<int>` payload as-is (no multi-MB copy) and raises the typed `malformed_response` for non-int elements ×3

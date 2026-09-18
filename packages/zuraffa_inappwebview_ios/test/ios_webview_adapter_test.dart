@@ -259,4 +259,73 @@ void main() {
       );
     });
   });
+
+  group('review-fix hardening', () {
+    test('S6: a non-int byte element -> typed malformed_response', () async {
+      port = IosWebviewPort(channel: scripted(payload: {
+        'data': ['a', 'b'],
+      }));
+      await expectLater(
+        port.takeScreenshot(id: 'w'),
+        throwsA(isA<IosWebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+    });
+
+    test('S6: a List<int> payload is returned without a copy', () async {
+      final bytes = <int>[1, 2, 3];
+      port = IosWebviewPort(channel: scripted(payload: {'data': bytes}));
+      expect(identical(await port.exportPdf(id: 'w'), bytes), isTrue);
+    });
+
+    test('N8: a foreign undecodable payload never errors this subscriber',
+        () async {
+      final events = StreamController<Object?>();
+      addTearDown(() => unawaited(events.close()));
+      port = IosWebviewPort(channel: IosWebviewChannel(
+        invoke: (m, a) async => {'ok': true},
+        eventSource: (method) => method == 'navigationEvents'
+            ? events.stream
+            : const Stream.empty(),
+      ));
+      Object? error;
+      final seen = <WebviewNavigationEvent>[];
+      final sub = port.navigationEvents(id: 'w').listen(
+            seen.add,
+            onError: (Object e) => error = e,
+          );
+      await Future<void>.delayed(Duration.zero);
+      // Unconvertible to Map<String, Object?> and not addressed to 'w':
+      // dropped before decoding, so this subscription never sees it.
+      events.add({1: 'not-a-string-key'});
+      await Future<void>.delayed(Duration.zero);
+      expect(error, isNull);
+      expect(seen, isEmpty);
+      await sub.cancel();
+    });
+
+    test('C7: a foreign undecodable payload never errors this subscriber',
+        () async {
+      final events = StreamController<Object?>();
+      addTearDown(() => unawaited(events.close()));
+      port = IosWebviewPort(channel: IosWebviewChannel(
+        invoke: (m, a) async => {'ok': true},
+        eventSource: (method) => method == 'captureEvents'
+            ? events.stream
+            : const Stream.empty(),
+      ));
+      Object? error;
+      final seen = <WebviewCaptureEntry>[];
+      final sub = port.captureEvents(id: 'w').listen(
+            seen.add,
+            onError: (Object e) => error = e,
+          );
+      await Future<void>.delayed(Duration.zero);
+      events.add({1: 'not-a-string-key'});
+      await Future<void>.delayed(Duration.zero);
+      expect(error, isNull);
+      expect(seen, isEmpty);
+      await sub.cancel();
+    });
+  });
 }

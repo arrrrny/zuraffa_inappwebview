@@ -25,3 +25,9 @@
 
 - [x] T011 barrel exports + FEATURES.md 004 row notes guard deferral
 - [x] T012 repo-wide analyze + tests green
+
+## Phase 5: Review-fix round (PR #4 findings)
+
+- [x] T013 `[TDD]` (US1, N8) unknown navigation `type` → `WebviewNavigationPhase.unknown`
+- [x] T014 `[TDD]` (US2, N8) `NavigationTracker.clear(id)` drops the per-id record
+- [x] T015 `[TDD]` (US1/US2, N9) `attach` subscribes with `onError` (contained); adapter navigation streams filter by `id` before decoding
