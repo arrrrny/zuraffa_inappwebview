@@ -7,7 +7,7 @@
 | S3 | null port result → null service result (no throw) | T002 | DONE |
 | S4 | unknown id → typed `not_created` (both ops) | T002 | DONE |
 | S5 | `UnwiredWebviewPort` → `port_not_wired` (both ops) | T002 | DONE |
-| S6a | android adapter: forwards `takeScreenshot` + config args, decodes `data`, null passthrough, `malformed_response` on non-list, `exportPdf` method name | T003 | DONE |
+| S6a | android adapter: forwards `takeScreenshot` + config args, decodes `data`, null passthrough, `malformed_response` on non-list/non-integer payloads, `exportPdf` method name | T003 | DONE |
 | S6b | ios adapter: same contract | T004 | DONE |
 | S6c | macos adapter: same contract | T005 | DONE |
 

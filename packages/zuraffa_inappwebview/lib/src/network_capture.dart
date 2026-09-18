@@ -27,18 +27,42 @@ class WebviewCaptureEntry {
   }) : at = at ?? DateTime.now();
 
   /// Codec from channel args (event method `captureEvents`).
-  static WebviewCaptureEntry fromChannelArgs(Map<String, Object?> args) =>
+  ///
+  /// Decoding is tolerant by design: a payload that is not exactly the
+  /// documented shape degrades instead of throwing a bare `TypeError`
+  /// into a capture stream. Wrongly-typed strings become null, a
+  /// non-`int` status is truncated to an `int`, a header whose name or
+  /// value is not a string is dropped.
+  static WebviewCaptureEntry fromChannelArgs(
+    Map<String, Object?> args, {
+    DateTime? at,
+  }) =>
       WebviewCaptureEntry(
-        url: args['url'] as String? ?? '',
-        method: args['method'] as String? ?? 'GET',
-        requestHeaders:
-            Map<String, String>.from(args['requestHeaders'] as Map? ?? {}),
-        requestBody: args['requestBody'] as String?,
-        status: args['status'] as int?,
-        responseHeaders:
-            Map<String, String>.from(args['responseHeaders'] as Map? ?? {}),
-        responseBody: args['responseBody'] as String?,
+        url: _asString(args['url']) ?? '',
+        method: _asString(args['method']) ?? 'GET',
+        requestHeaders: _asHeaders(args['requestHeaders']),
+        requestBody: _asString(args['requestBody']),
+        status: _asInt(args['status']),
+        responseHeaders: _asHeaders(args['responseHeaders']),
+        responseBody: _asString(args['responseBody']),
+        at: at,
       );
+
+  static String? _asString(Object? raw) => raw is String ? raw : null;
+
+  static int? _asInt(Object? raw) =>
+      raw is int ? raw : (raw is num ? raw.toInt() : null);
+
+  static Map<String, String> _asHeaders(Object? raw) {
+    if (raw is! Map) return const {};
+    final headers = <String, String>{};
+    for (final entry in raw.entries) {
+      final key = entry.key;
+      final value = entry.value;
+      if (key is String && value is String) headers[key] = value;
+    }
+    return headers;
+  }
 }
 
 /// Capture filter riding the enable call (spec 005 FR-1): a
@@ -61,7 +85,8 @@ class WebviewCaptureFilter {
 
 /// Bounded retention policy applied at ingestion (spec 005 FR-3):
 /// [maxEntries] keeps the latest entries when exceeded; [maxBodyBytes]
-/// truncates string bodies.
+/// truncates string bodies to that many UTF-8 bytes, never splitting a
+/// code point.
 class CaptureBudget {
   final int maxEntries;
   final int maxBodyBytes;
@@ -72,6 +97,28 @@ class CaptureBudget {
   });
 }
 
+/// Truncates [value] to at most [maxBytes] UTF-8 bytes, dropping the
+/// trailing characters that do not fit whole. Slicing code units instead
+/// can leave a lone surrogate that strict JSON/UTF-8 consumers reject.
+String _truncateUtf8(String value, int maxBytes) {
+  if (value.length <= maxBytes) return value;
+  var bytes = 0;
+  final out = StringBuffer();
+  for (final rune in value.runes) {
+    final size = rune < 0x80
+        ? 1
+        : rune < 0x800
+            ? 2
+            : rune < 0x10000
+                ? 3
+                : 4;
+    if (bytes + size > maxBytes) break;
+    bytes += size;
+    out.writeCharCode(rune);
+  }
+  return out.toString();
+}
+
 /// Marker substituted for any redacted secret value (zikzak A15).
 const String kRedactionMarker = '<redacted>';
 
@@ -80,6 +127,10 @@ const Set<String> _redactedHeaderKeys = {
   'proxy-authorization',
   'cookie',
   'set-cookie',
+  'x-api-key',
+  'api-key',
+  'x-auth-token',
+  'x-access-token',
 };
 
 const Set<String> _redactedParamKeys = {
@@ -175,15 +226,18 @@ class NetworkCaptureManager {
   void ingest(String id, WebviewCaptureEntry entry) {
     final buffered = _entries.putIfAbsent(id, () => []);
     var e = redactAuth ? _redactor.redact(entry) : entry;
-    if (e.requestBody != null &&
-        e.requestBody!.length > budget.maxBodyBytes) {
-      e = _copyWith(e, requestBody: e.requestBody!.substring(0, budget.maxBodyBytes));
-    }
-    if (e.responseBody != null &&
-        e.responseBody!.length > budget.maxBodyBytes) {
+    final requestBody = e.requestBody;
+    if (requestBody != null && requestBody.length > budget.maxBodyBytes) {
       e = _copyWith(
         e,
-        responseBody: e.responseBody!.substring(0, budget.maxBodyBytes),
+        requestBody: _truncateUtf8(requestBody, budget.maxBodyBytes),
+      );
+    }
+    final responseBody = e.responseBody;
+    if (responseBody != null && responseBody.length > budget.maxBodyBytes) {
+      e = _copyWith(
+        e,
+        responseBody: _truncateUtf8(responseBody, budget.maxBodyBytes),
       );
     }
     buffered.add(e);

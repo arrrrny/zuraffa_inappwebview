@@ -114,9 +114,9 @@ leak-free call.
 - **FR-1**: `WebviewPool(service, {settings, maxLive=8, maxPerDomain=2, idleTtl=2min, clock})`.
 - **FR-2**: `acquire(sessionId, {domainHint})` → pool-generated webview id; session-keyed identity; create+run on first acquire.
 - **FR-3**: `release(sessionId)` → warm idle; `disposeAll()`; `liveCount`; `sessions()`.
-- **FR-4**: Domain affinity by eTLD+1 approximation (last two labels) across idle instances.
+- **FR-4**: Domain affinity by eTLD+1 approximation (last two labels) across idle instances; IP literals (IPv4/IPv6) map to themselves.
 - **FR-5**: `maxLive` with LRU-idle eviction; `pool_exhausted` typed failure when saturated; `idleTtl` lazy sweep.
-- **FR-6**: `maxPerDomain` — a new instance for a domain already at cap first evicts that domain's idlest instance; if all live, `pool_exhausted`.
+- **FR-6**: `maxPerDomain` — a new instance is never created for a domain already at cap: an idle instance of that domain is reused by FR-4, and when every instance of that domain is live the acquire fails typed `pool_exhausted`.
 
 ## Success Criteria
 

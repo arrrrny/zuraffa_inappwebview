@@ -125,6 +125,17 @@ void main() {
       );
     });
 
+    test('S6: a non-integer byte raises malformed_response', () async {
+      port = MacosWebviewPort(channel: scripted(payload: {
+        'data': [1, 2.5, 3],
+      }));
+      await expectLater(
+        port.takeScreenshot(id: 'w'),
+        throwsA(isA<MacosWebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+    });
+
     test('S6: exportPdf rides its own method name', () async {
       port = MacosWebviewPort(channel: scripted(payload: {
         'data': [9, 8, 7],

@@ -28,8 +28,10 @@ analyze clean.
 
 ## Notes
 
-- The tap script quotes/escapes the selector; the `?? {click: null}`
-  guard makes missing-element clicks a no-op TypeError at worst (driver
-  surface stays typed).
+- The tap script quotes/escapes the selector; a missing-element click is
+  a no-op (`?.click()`).
+  *(Post-review fix: the original `?? {click: null}` guard still threw on
+  a miss, and the selector literal is now `jsonEncode`d so backslashes
+  cannot emit a script that does not parse.)*
 - zikzak's signal matching, selector-candidate scoring, and snapshot
   models defer behind the sealed step list (spec Assumptions).

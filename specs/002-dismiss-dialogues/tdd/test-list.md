@@ -13,7 +13,7 @@ Behaviors derived from spec.md acceptance scenarios + plan.md. All in
 | D6 | `DialogueDismissPolicy` clamps attempts to ≥ 1; defaults: 1 attempt, zero delay | T003 | DONE |
 | D7 | `service.dismissDialogues(id)` sends exactly one `evaluateJavascript` with the canonical source | T004 | DONE |
 | D8 | unknown id → typed `not_created` failure | T004 | DONE |
-| D9 | port raising during dismissal is swallowed (completes normally) | T004 | DONE |
+| D9 | port raising during dismissal (`Exception` or `Error`) is swallowed (completes normally) | T004 | DONE |
 | D10 | policy `attempts: 3` → three evaluations (with delay between) | T005 | DONE |
 
 Counts: 10 behaviors — 10 driven red → green, 0 remaining.

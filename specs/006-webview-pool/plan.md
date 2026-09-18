@@ -5,9 +5,10 @@
 ## Summary
 
 Pure-Dart `WebviewPool` over `WebviewService`: session-keyed acquire with
-pool-generated ids, warm-idle release, eTLD+1 domain affinity, `maxLive` +
-`maxPerDomain` caps with LRU-idle eviction, `pool_exhausted` typed
-failure, lazy `idleTtl` sweep (injectable clock), `disposeAll`.
+pool-generated ids, warm-idle release, eTLD+1 domain affinity, `maxLive`
+(via LRU-idle eviction) + `maxPerDomain` (via affinity reuse, falling back
+to a typed `pool_exhausted`) caps, lazy `idleTtl` sweep (injectable
+clock), `disposeAll`.
 
 ## Project Structure
 
@@ -21,8 +22,8 @@ app: lib/src/webview_pool.dart     # NEW (no port widening — rides the service
 | Piece | Shape |
 |---|---|
 | `_PooledInstance` | webviewId, domain (registrable), session? (null = idle), idleSince |
-| acquire | active reuse → warm same-domain reuse → evict to fit caps → create+run |
-| registrableDomain | last two host labels (`shop.x.dev` → `x.dev`) |
+| acquire | active reuse → warm same-domain reuse → evict an idle to fit `maxLive` (else `pool_exhausted`) → per-domain cap check (`pool_exhausted`) → create+run |
+| registrableDomain | last two host labels (`shop.x.dev` → `x.dev`); single-label hosts and IP literals map to themselves |
 
 ## MVP
 

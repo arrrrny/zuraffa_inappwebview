@@ -10,24 +10,30 @@ WebviewCaptureEntry _entry({
   String? requestBody,
   int? status = 200,
   String? responseBody = '{"ok":true}',
+  DateTime? at,
 }) =>
-    WebviewCaptureEntry.fromChannelArgs({
-      'url': url,
-      'method': method,
-      'requestHeaders': requestHeaders,
-      if (requestBody != null) 'requestBody': requestBody,
-      'status': status,
-      'responseHeaders': const <String, String>{},
-      if (responseBody != null) 'responseBody': responseBody,
-    });
+    WebviewCaptureEntry.fromChannelArgs(
+      {
+        'url': url,
+        'method': method,
+        'requestHeaders': requestHeaders,
+        if (requestBody != null) 'requestBody': requestBody,
+        'status': status,
+        'responseHeaders': const <String, String>{},
+        if (responseBody != null) 'responseBody': responseBody,
+      },
+      at: at,
+    );
 
 void main() {
   group('US1 — codec + filter', () {
     test('C1: decodes the full channel shape', () {
+      final at = DateTime(2026, 1, 2, 3, 4, 5);
       final e = _entry(
         requestHeaders: {'accept': 'application/json'},
         requestBody: 'a=1',
         responseBody: '[1,2]',
+        at: at,
       );
       expect(e.url, 'https://x.dev/api');
       expect(e.method, 'GET');
@@ -35,7 +41,22 @@ void main() {
       expect(e.requestBody, 'a=1');
       expect(e.status, 200);
       expect(e.responseBody, '[1,2]');
-      expect(e.at, isNotNull);
+      expect(e.at, at);
+    });
+
+    test('C1: a malformed payload degrades instead of throwing', () {
+      final e = WebviewCaptureEntry.fromChannelArgs({
+        'url': 7,
+        'method': null,
+        'requestHeaders': {'X-Keep': 'ok', 'X-Drop': null, 3: 'n'},
+        'status': 204.0,
+        'responseHeaders': 'oops',
+      });
+      expect(e.url, '');
+      expect(e.method, 'GET');
+      expect(e.requestHeaders, {'X-Keep': 'ok'});
+      expect(e.status, 204);
+      expect(e.responseHeaders, isEmpty);
     });
 
     test('C1: filter serializes urlPattern + maxBodyBytes', () {
@@ -131,6 +152,8 @@ void main() {
           requestHeaders: {
             'Authorization': 'Bearer xyz',
             'Cookie': 'a=b',
+            'X-API-Key': 'sk-live-123',
+            'X-Auth-Token': 'tok-456',
             'Accept': 'json',
           },
         ),
@@ -138,6 +161,8 @@ void main() {
       final e = manager.entries('w').single;
       expect(e.requestHeaders['Authorization'], '<redacted>');
       expect(e.requestHeaders['Cookie'], '<redacted>');
+      expect(e.requestHeaders['X-API-Key'], '<redacted>');
+      expect(e.requestHeaders['X-Auth-Token'], '<redacted>');
       expect(e.requestHeaders['Accept'], 'json');
       expect(e.url, contains('token=<redacted>'));
       expect(e.url, contains('keep=1'));
@@ -173,6 +198,17 @@ void main() {
         ['https://x.dev/2', 'https://x.dev/3'],
       );
       expect(manager.entries('w').last.responseBody, hasLength(10));
+    });
+
+    test('C5b: maxBodyBytes truncates on a code-point boundary', () {
+      final manager = NetworkCaptureManager(
+        budget: const CaptureBudget(maxBodyBytes: 4),
+      );
+      manager.ingest('w', _entry(responseBody: '😀' * 4));
+      final body = manager.entries('w').single.responseBody!;
+      expect(body, '😀'); // exactly one 4-byte code point
+      expect(body.codeUnits, [0xd83d, 0xde00]); // never a lone surrogate
+      expect(body.runes.length, 1);
     });
   });
 }

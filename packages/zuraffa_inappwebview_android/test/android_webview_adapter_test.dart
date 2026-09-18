@@ -125,6 +125,17 @@ void main() {
       );
     });
 
+    test('S6a: a non-integer byte raises malformed_response', () async {
+      port = AndroidWebviewPort(channel: scripted(payload: {
+        'data': [1, 2.5, 3],
+      }));
+      await expectLater(
+        port.takeScreenshot(id: 'w'),
+        throwsA(isA<AndroidWebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+    });
+
     test('S6a: exportPdf rides its own method name', () async {
       port = AndroidWebviewPort(channel: scripted(payload: {
         'data': [9, 8, 7],

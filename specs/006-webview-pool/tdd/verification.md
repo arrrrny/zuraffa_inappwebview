@@ -31,8 +31,10 @@ before implementation and the GREEN totals (116/116 repo-wide).
 
 ## Gaps (non-blocking)
 
-- maxPerDomain's dedicated eviction path is implemented (FR-6) but not
-  separately pinned by a test — it shares the `_idlest` machinery proven
-  by P5a; a dedicated scenario is a cheap follow-up.
+- `maxPerDomain` (FR-6) is pinned by P5c/P5d. *(Post-review fix: the
+  dedicated per-domain eviction limb was unreachable — a same-domain idle
+  is always reused by the affinity loop first — so it was removed in
+  favour of the typed `pool_exhausted` fallback, and FR-6 was reworded to
+  match.)*
 - Memory-pressure lifecycle listeners defer to the app shell (spec
   Assumptions).

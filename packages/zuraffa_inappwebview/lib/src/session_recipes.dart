@@ -3,6 +3,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'navigation_tracking.dart';
 import 'webview_service.dart';
@@ -134,7 +135,9 @@ Future<ReplayResult> replay(
 }
 
 /// [RecipeDriver] over [WebviewService] (spec 007 US3): loads validated
-/// urls and clicks selectors via the canonical tap script.
+/// urls and clicks selectors via the canonical tap script
+/// `document.querySelector(sel)?.click()`. Tapping a selector that
+/// matches nothing is a no-op, not a failure.
 class WebviewServiceRecipeDriver implements RecipeDriver {
   final WebviewService service;
   final String webviewId;
@@ -153,9 +156,11 @@ class WebviewServiceRecipeDriver implements RecipeDriver {
   @override
   Future<void> tap(String selector) => service.evaluateJavascript(
         id: webviewId,
-        source:
-            "(document.querySelector(${_quote(selector)}) ?? {click: null}).click()",
+        source: 'document.querySelector(${_quote(selector)})?.click()',
       );
 
-  static String _quote(String raw) => "'${raw.replaceAll("'", r"\'")}'";
+  /// The selector as a JavaScript string literal. [jsonEncode] escapes
+  /// quotes, backslashes and control characters in one step, so no
+  /// selector can produce a script that does not parse.
+  static String _quote(String raw) => jsonEncode(raw);
 }

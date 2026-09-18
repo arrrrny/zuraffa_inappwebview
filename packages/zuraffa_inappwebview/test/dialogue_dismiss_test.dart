@@ -122,16 +122,16 @@ void main() {
 
     test('D3: removes computed fixed/sticky elements', () {
       expect(source, contains('getComputedStyle'));
-      expect(source, contains('fixed'));
-      expect(source, contains('sticky'));
-      expect(source, contains('.remove()'));
+      expect(source, contains("pos === 'fixed' || pos === 'sticky'"));
+      expect(source, contains('el.remove()'));
+      expect(source, isNot(contains("pos === 'absolute'")));
     });
 
     test('D4: resets overflow/margin on documentElement and body', () {
-      expect(source, contains('documentElement'));
-      expect(source, contains('body'));
-      expect(source, contains('overflow'));
-      expect(source, contains('margin'));
+      expect(source, contains('document.documentElement'));
+      expect(source, contains('document.body'));
+      expect(source, contains("roots[j].style.overflow = ''"));
+      expect(source, contains("roots[j].style.margin = ''"));
     });
 
     test('D5: top-level document only (no frames recursion)', () {
@@ -176,6 +176,12 @@ void main() {
             'boom',
             recoverable: true,
           );
+      await service.dismissDialogues(id: 'scraper');
+      expect(port.evaluated, hasLength(1));
+    });
+
+    test('D9b: a port Error is swallowed too', () async {
+      port.evaluateHook = (_) => throw StateError('misbehaving port');
       await service.dismissDialogues(id: 'scraper');
       expect(port.evaluated, hasLength(1));
     });

@@ -105,21 +105,48 @@ void main() {
   });
 
   group('US3 — service driver', () {
+    late _RecipeFakePort port;
+    late WebviewService service;
+    late WebviewServiceRecipeDriver driver;
+
+    setUp(() async {
+      port = _RecipeFakePort();
+      service = WebviewService(port: port);
+      await service.createHeadless(id: 'w');
+      driver = WebviewServiceRecipeDriver(service: service, webviewId: 'w');
+    });
+
     test('R7: loadUrl + canonical tap script through the service',
         () async {
-      final port = _RecipeFakePort();
-      final service = WebviewService(port: port);
-      await service.createHeadless(id: 'w');
-      final driver = WebviewServiceRecipeDriver(
-          service: service, webviewId: 'w');
-
       await driver.loadUrl(Uri.parse('https://x.dev/'));
       expect(port.lastLoadedUrl, 'https://x.dev/');
 
       await driver.tap('#buy');
-      expect(port.lastEvaluatedSource, contains('querySelector'));
-      expect(port.lastEvaluatedSource, contains('#buy'));
-      expect(port.lastEvaluatedSource, contains('click'));
+      expect(
+        port.lastEvaluatedSource,
+        'document.querySelector("#buy")?.click()',
+      );
+    });
+
+    test('R8: the selector is escaped into a parsable literal', () async {
+      await driver.tap(r'a\');
+      expect(
+        port.lastEvaluatedSource,
+        r'document.querySelector("a\\")?.click()',
+      );
+
+      await driver.tap("\\');alert(1);//");
+      expect(
+        port.lastEvaluatedSource,
+        r'''document.querySelector("\\');alert(1);//")?.click()''',
+      );
+    });
+
+    test('R9: a selector that matches nothing is a no-op', () async {
+      await driver.tap('#nope');
+      expect(port.lastEvaluatedSource, contains('?.click()'));
+      expect(port.lastEvaluatedSource, isNot(contains('??')));
+      expect(port.lastEvaluatedSource, isNot(contains('click: null')));
     });
   });
 }

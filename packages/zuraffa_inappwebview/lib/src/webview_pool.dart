@@ -76,23 +76,28 @@ class WebviewPool {
     if (domain != null) {
       final sameDomain = _held.where((i) => i.domain == domain).length;
       if (sameDomain >= maxPerDomain) {
-        final idle = _idlest(
-          _held.where((i) => i.session == null && i.domain == domain),
+        // An idle instance of this domain would have been reused by the
+        // affinity loop above, so everything counted here is live — the
+        // per-domain cap has nothing to evict and only FR-6's fallback
+        // applies.
+        throw WebviewException(
+          'pool_exhausted',
+          'Domain "$domain" already holds $maxPerDomain live instances.',
+          recoverable: true,
         );
-        if (idle == null) {
-          throw WebviewException(
-            'pool_exhausted',
-            'Domain "$domain" already holds $maxPerDomain live instances.',
-            recoverable: true,
-          );
-        }
-        await _dispose(idle);
       }
     }
 
     final id = 'pool-${++_counter}';
     await service.createHeadless(id: id, settings: settings);
-    await service.runHeadless(id: id);
+    try {
+      await service.runHeadless(id: id);
+    } catch (_) {
+      // The service has already registered the webview, so a failed run
+      // must be disposed here or nothing can ever reach it again.
+      await service.disposeHeadless(id: id);
+      rethrow;
+    }
     _held.add(_PooledInstance(
       webviewId: id,
       domain: domain,
@@ -111,21 +116,34 @@ class WebviewPool {
     inst.idleSince = clock();
   }
 
-  /// Disposes every held instance (active and idle).
+  /// Disposes every held instance (active and idle). Every instance is
+  /// attempted before the first failure is surfaced, so one broken
+  /// dispose cannot leave the rest warm.
   Future<void> disposeAll() async {
+    Object? firstError;
     for (final inst in List.of(_held)) {
-      await _dispose(inst);
+      try {
+        await _dispose(inst);
+      } catch (e) {
+        firstError ??= e;
+      }
     }
+    if (firstError != null) throw firstError;
   }
 
   /// eTLD+1 approximation: the last two host labels (`shop.x.dev` →
-  /// `x.dev`). Single-label hosts map to themselves. Multi-part TLDs
-  /// (co.uk) are a documented follow-up.
+  /// `x.dev`). Single-label hosts and IP literals (`10.0.0.5`, IPv6)
+  /// map to themselves — collapsing them would make unrelated hosts
+  /// share sessions. Multi-part TLDs (co.uk) are a documented
+  /// follow-up.
   static String registrableDomain(String host) {
+    if (host.contains(':') || _ipv4Literal.hasMatch(host)) return host;
     final labels = host.split('.');
     if (labels.length <= 2) return host;
     return labels.sublist(labels.length - 2).join('.');
   }
+
+  static final RegExp _ipv4Literal = RegExp(r'^(\d{1,3}\.){3}\d{1,3}$');
 
   _PooledInstance? _instanceFor(String sessionId) {
     for (final i in _held) {
@@ -157,8 +175,11 @@ class WebviewPool {
   }
 
   Future<void> _dispose(_PooledInstance inst) async {
-    _held.remove(inst);
+    // Forget the instance only once the port has released it: a failed
+    // dispose leaves the webview registered with the service, so keeping
+    // it here is what makes a retry reachable.
     await service.disposeHeadless(id: inst.webviewId);
+    _held.remove(inst);
   }
 }
 
