@@ -76,6 +76,22 @@ class WebviewService {
     return port.getHtml(id: id);
   }
 
+  /// Captures the rendered page as image bytes; null when the platform
+  /// could not capture (spec 003).
+  Future<List<int>?> takeScreenshot({
+    required String id,
+    ScreenshotConfiguration? config,
+  }) {
+    _requireCreated(id);
+    return port.takeScreenshot(id: id, config: config);
+  }
+
+  /// Exports the rendered page as PDF bytes; null on failure (spec 003).
+  Future<List<int>?> exportPdf({required String id}) {
+    _requireCreated(id);
+    return port.exportPdf(id: id);
+  }
+
   /// Removes fixed/sticky overlays from the loaded page for clean captures
   /// (spec 002). Best-effort by contract: port errors during dismissal are
   /// swallowed and never break the caller's flow.
@@ -185,6 +201,16 @@ class UnwiredWebviewPort implements WebviewPort {
 
   @override
   Future<String?> getHtml({required String id}) => _unwired();
+
+  @override
+  Future<List<int>?> takeScreenshot({
+    required String id,
+    ScreenshotConfiguration? config,
+  }) =>
+      _unwired();
+
+  @override
+  Future<List<int>?> exportPdf({required String id}) => _unwired();
 
   @override
   Future<void> setCookie(WebviewCookie cookie) => _unwired();

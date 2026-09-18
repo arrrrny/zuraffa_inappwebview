@@ -19,7 +19,12 @@ export 'src/webview_module.dart'
 export 'src/webview_port.dart' show WebviewPort;
 export 'src/webview_service.dart' show UnwiredWebviewPort, WebviewService;
 export 'src/webview_types.dart'
-    show WebviewCookie, WebviewSettings, WebviewUri;
+    show
+        ScreenshotConfiguration,
+        ScreenshotFormat,
+        WebviewCookie,
+        WebviewSettings,
+        WebviewUri;
 export 'src/webview_usecases.dart'
     show
         EvaluateJavascriptParams,

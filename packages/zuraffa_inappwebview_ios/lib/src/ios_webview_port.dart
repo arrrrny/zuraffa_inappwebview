@@ -79,6 +79,36 @@ class IosWebviewPort implements WebviewPort {
   }
 
   @override
+  Future<List<int>?> takeScreenshot({
+    required String id,
+    ScreenshotConfiguration? config,
+  }) async {
+    final result = await channel.call('takeScreenshot', {
+      'id': id,
+      if (config != null) ...config.toChannelArgs(),
+    });
+    return _decodeBytes(result?['data']);
+  }
+
+  @override
+  Future<List<int>?> exportPdf({required String id}) async {
+    final result = await channel.call('exportPdf', {'id': id});
+    return _decodeBytes(result?['data']);
+  }
+
+  List<int>? _decodeBytes(Object? raw) {
+    if (raw == null) return null;
+    if (raw is! List) {
+      throw const IosWebviewException(
+        'malformed_response',
+        'The capture result carried a non-list data payload.',
+        recoverable: false,
+      );
+    }
+    return [for (final b in raw) b as int];
+  }
+
+  @override
   Future<void> setCookie(WebviewCookie cookie) async {
     await channel.call('setCookie', cookie.toChannelArgs());
   }

@@ -88,4 +88,48 @@ void main() {
       );
     });
   });
+
+  group('capture ops (spec 003)', () {
+    test('S6a: takeScreenshot forwards config args and decodes data',
+        () async {
+      port = AndroidWebviewPort(channel: scripted(payload: {
+        'data': [1, 2, 3],
+      }));
+      final bytes = await port.takeScreenshot(
+        id: 'w',
+        config: const ScreenshotConfiguration(
+          format: ScreenshotFormat.jpeg,
+          quality: 80,
+        ),
+      );
+      expect(bytes, [1, 2, 3]);
+      expect(lastMethod, 'takeScreenshot');
+      expect(lastArgs['id'], 'w');
+      expect(lastArgs['format'], 'jpeg');
+      expect(lastArgs['quality'], 80);
+    });
+
+    test('S6a: null data passes through as null', () async {
+      port = AndroidWebviewPort(channel: scripted(payload: {'data': null}));
+      expect(await port.takeScreenshot(id: 'w'), isNull);
+    });
+
+    test('S6a: non-list data raises malformed_response', () async {
+      port = AndroidWebviewPort(channel: scripted(payload: {'data': 'oops'}));
+      await expectLater(
+        port.takeScreenshot(id: 'w'),
+        throwsA(isA<AndroidWebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+    });
+
+    test('S6a: exportPdf rides its own method name', () async {
+      port = AndroidWebviewPort(channel: scripted(payload: {
+        'data': [9, 8, 7],
+      }));
+      expect(await port.exportPdf(id: 'w'), [9, 8, 7]);
+      expect(lastMethod, 'exportPdf');
+      expect(lastArgs['id'], 'w');
+    });
+  });
 }
