@@ -27,6 +27,7 @@ void registerIosWebviewDependencies(
           ? channel
           : IosWebviewChannel(
               invoke: channel.invoke,
+              eventSource: channel.eventSource,
               timeout: timeout,
             );
   getIt.registerLazySingleton<WebviewPort>(
