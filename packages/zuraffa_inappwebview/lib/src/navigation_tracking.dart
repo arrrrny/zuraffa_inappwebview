@@ -4,6 +4,8 @@ library;
 
 import 'dart:async';
 
+import 'webview_exception.dart';
+
 /// The phase of a navigation event (channel key `type`).
 enum WebviewNavigationPhase { started, completed, failed }
 
@@ -24,21 +26,32 @@ class WebviewNavigationEvent {
   }) : at = at ?? DateTime.now();
 
   /// Codec from channel args: `type`, `url`, `isMainFrame` (default true),
-  /// `code` (optional).
+  /// `code` (optional). An unrecognized `type` is a typed
+  /// `malformed_response` failure rather than a silent `started`: the
+  /// phase enum has no unknown member for a caller to defend against.
   static WebviewNavigationEvent fromChannelArgs(
     Map<String, Object?> args, {
     DateTime? at,
-  }) =>
-      WebviewNavigationEvent(
-        phase: WebviewNavigationPhase.values.firstWhere(
-          (p) => p.name == args['type'],
-          orElse: () => WebviewNavigationPhase.started,
-        ),
-        url: args['url'] as String? ?? '',
-        isMainFrame: args['isMainFrame'] as bool? ?? true,
-        errorCode: args['code'] as String?,
-        at: at,
+  }) {
+    final raw = args['type'];
+    final phase = WebviewNavigationPhase.values
+        .where((p) => p.name == raw)
+        .firstOrNull;
+    if (phase == null) {
+      throw WebviewException(
+        'malformed_response',
+        'Unknown navigation phase "$raw".',
+        recoverable: false,
       );
+    }
+    return WebviewNavigationEvent(
+      phase: phase,
+      url: args['url'] as String? ?? '',
+      isMainFrame: args['isMainFrame'] as bool? ?? true,
+      errorCode: args['code'] as String?,
+      at: at,
+    );
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -70,8 +83,10 @@ class UrlVisit {
 
 /// Ordered, deduplicated URL-cycle record per webview id (spec 004).
 ///
-/// - Dedup rule: a transition (phase + url) repeating within
-///   [dedupWindow] collapses to its earliest occurrence.
+/// - Dedup rule: a (phase + url) transition repeating *immediately after
+///   the preceding visit* within [dedupWindow] collapses into that visit.
+///   The scope is adjacency, not the whole window: a url that repeats
+///   after any intervening transition is recorded again.
 /// - `mainFrameOnly` (default) drops sub-frame events.
 /// - [hasCycle] reports a revisit loop (A → B → A) over the record.
 ///
@@ -135,7 +150,8 @@ class NavigationTracker {
       (_entries[id]?.isEmpty ?? true) ? null : _entries[id]!.last.url;
 
   /// Whether the record shows a revisit loop: the latest url reappears
-  /// earlier in the record (A → B → A).
+  /// anywhere earlier in the record (A → B → A). Consecutive repeats
+  /// count too, so A → A → A reports a cycle.
   bool hasCycle(String id) {
     final urls = _entries[id]?.map((v) => v.url).toList() ?? const [];
     if (urls.length < 3) return false;

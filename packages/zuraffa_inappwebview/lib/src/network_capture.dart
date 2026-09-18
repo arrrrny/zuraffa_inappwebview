@@ -3,6 +3,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 /// One intercepted XHR/fetch exchange pushed by the platform.
 class WebviewCaptureEntry {
@@ -26,7 +27,8 @@ class WebviewCaptureEntry {
     DateTime? at,
   }) : at = at ?? DateTime.now();
 
-  /// Codec from channel args (event method `captureEvents`).
+  /// Codec from channel args (event method `captureEvents`). A missing or
+  /// unparseable `at` falls back to now — old cassettes stay readable.
   static WebviewCaptureEntry fromChannelArgs(Map<String, Object?> args) =>
       WebviewCaptureEntry(
         url: args['url'] as String? ?? '',
@@ -38,11 +40,16 @@ class WebviewCaptureEntry {
         responseHeaders:
             Map<String, String>.from(args['responseHeaders'] as Map? ?? {}),
         responseBody: args['responseBody'] as String?,
+        at: switch (args['at']) {
+          final String raw => DateTime.tryParse(raw),
+          _ => null,
+        },
       );
 }
 
 /// Capture filter riding the enable call (spec 005 FR-1): a
-/// case-insensitive URL substring plus a body byte cap.
+/// case-insensitive URL substring plus a body byte cap. The filter only
+/// travels over the channel — applying it is the platform's job.
 class WebviewCaptureFilter {
   final String? urlPattern;
   final int? maxBodyBytes;
@@ -53,15 +60,11 @@ class WebviewCaptureFilter {
         if (urlPattern != null) 'urlPattern': urlPattern,
         if (maxBodyBytes != null) 'maxBodyBytes': maxBodyBytes,
       };
-
-  /// Whether [entry] passes the URL pattern (absent pattern = match all).
-  bool matches(WebviewCaptureEntry entry) => urlPattern == null ||
-      entry.url.toLowerCase().contains(urlPattern!.toLowerCase());
 }
 
 /// Bounded retention policy applied at ingestion (spec 005 FR-3):
 /// [maxEntries] keeps the latest entries when exceeded; [maxBodyBytes]
-/// truncates string bodies.
+/// truncates string bodies to that many UTF-8 bytes, on a rune boundary.
 class CaptureBudget {
   final int maxEntries;
   final int maxBodyBytes;
@@ -120,13 +123,17 @@ class CaptureSecretRedactor {
 
   /// Redacts auth-shaped query parameters, preserving structure and
   /// non-secret params. Rebuilt as a raw string so the marker is not
-  /// percent-encoded by Uri canonicalization.
+  /// percent-encoded by Uri canonicalization. Any `#fragment` is split off
+  /// first so a redacted param never swallows it.
   String redactUrl(String url) {
-    final q = url.indexOf('?');
+    final hash = url.indexOf('#');
+    final fragment = hash == -1 ? '' : url.substring(hash);
+    final rest = hash == -1 ? url : url.substring(0, hash);
+    final q = rest.indexOf('?');
     if (q == -1) return url;
-    final base = url.substring(0, q);
+    final base = rest.substring(0, q);
     final kept = <String>[];
-    for (final part in url.substring(q + 1).split('&')) {
+    for (final part in rest.substring(q + 1).split('&')) {
       final eq = part.indexOf('=');
       if (eq == -1) {
         kept.add(part);
@@ -139,7 +146,7 @@ class CaptureSecretRedactor {
             : part,
       );
     }
-    return '$base?${kept.join('&')}';
+    return '$base?${kept.join('&')}$fragment';
   }
 }
 
@@ -175,16 +182,15 @@ class NetworkCaptureManager {
   void ingest(String id, WebviewCaptureEntry entry) {
     final buffered = _entries.putIfAbsent(id, () => []);
     var e = redactAuth ? _redactor.redact(entry) : entry;
-    if (e.requestBody != null &&
-        e.requestBody!.length > budget.maxBodyBytes) {
-      e = _copyWith(e, requestBody: e.requestBody!.substring(0, budget.maxBodyBytes));
+    final requestBody = e.requestBody;
+    if (requestBody != null) {
+      final capped = _truncateToByteBudget(requestBody, budget.maxBodyBytes);
+      if (capped != requestBody) e = _copyWith(e, requestBody: capped);
     }
-    if (e.responseBody != null &&
-        e.responseBody!.length > budget.maxBodyBytes) {
-      e = _copyWith(
-        e,
-        responseBody: e.responseBody!.substring(0, budget.maxBodyBytes),
-      );
+    final responseBody = e.responseBody;
+    if (responseBody != null) {
+      final capped = _truncateToByteBudget(responseBody, budget.maxBodyBytes);
+      if (capped != responseBody) e = _copyWith(e, responseBody: capped);
     }
     buffered.add(e);
     if (buffered.length > budget.maxEntries) {
@@ -214,4 +220,20 @@ class NetworkCaptureManager {
         responseBody: responseBody ?? e.responseBody,
         at: e.at,
       );
+}
+
+/// Truncates [s] to at most [maxBytes] UTF-8 bytes, stopping on a rune
+/// boundary so a multi-byte rune (and its surrogate pair) is never cut in
+/// half.
+String _truncateToByteBudget(String s, int maxBytes) {
+  if (utf8.encode(s).length <= maxBytes) return s;
+  final buffer = StringBuffer();
+  var used = 0;
+  for (final rune in s.runes) {
+    final size = utf8.encode(String.fromCharCode(rune)).length;
+    if (used + size > maxBytes) break;
+    buffer.writeCharCode(rune);
+    used += size;
+  }
+  return buffer.toString();
 }

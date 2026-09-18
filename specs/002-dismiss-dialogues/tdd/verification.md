@@ -19,7 +19,7 @@ tree at branch `002-dismiss-dialogues`.
 | US1-1 default off, serialized | D1 |
 | US1-2 opted-in serialized | D2 |
 | US2-1 one canonical evaluation on right id | D7 |
-| US2-2 script removes fixed/sticky + resets overflow/margin | D3, D4 |
+| US2-2 script removes fixed/sticky + resets overflow/margin | D3, D4 (payload executed under `node`) |
 | US2-3 `not_created` for unknown id | D8 |
 | US2-4 JS errors swallowed | D9 (+ in-script try/catch) |
 | US3-1 attempts drive retries | D10 |
@@ -47,6 +47,9 @@ tree at branch `002-dismiss-dialogues`.
 - D10 asserts retry count, not elapsed delay timing — asserting wall-clock
   timing would be flaky; the delay wiring is visible in the implementation
   and exercised by D10's policy path.
-- In-browser execution of the canonical script is a native/browser
-  milestone (no JS runtime in this repo's VM tests) — D3–D5 pin the script's
-  contract markers instead, matching the spec's Dart-side scope.
+- D3/D4 now execute the payload under `node` against a minimal DOM shim
+  (review follow-up), so a wrong operator, an early `return` or a missing
+  `remove()` fails the test instead of passing a `contains()` check. The
+  test skips with an explicit reason when no `node` binary is on PATH, in
+  which case only the structural markers of D3–D5 stand. Layout-driven
+  `position` values in a real browser remain a native milestone.

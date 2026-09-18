@@ -120,3 +120,9 @@ android/ios/macos pin the new op: method `loadHtml` with `id`, `html`,
   005 redactor defer behind the versioned format.
 - `loadHtml` is the native seam the native milestone implements to
   render offline content.
+- A replay restores served html and capture events only. Cookie snapshots
+  are recorded (and JSON round-tripped) but never written back during
+  replay, so "deterministic replay" does not extend to cookie state.
+- Replay matching is path-prefix based and origin-scoped; a request for an
+  unrecorded path on a recorded origin fails `vcr_unmatched` rather than
+  reaching the network.

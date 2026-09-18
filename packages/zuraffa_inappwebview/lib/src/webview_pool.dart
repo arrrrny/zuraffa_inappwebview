@@ -9,8 +9,18 @@ import 'webview_types.dart';
 /// consistent per mission and stops parallel missions from leaking
 /// webviews. Released instances stay warm (idle) and are reused by the
 /// next session on the same registrable domain (eTLD+1 approximation:
-/// last two host labels). Caps and TTL keep the pool memory-safe; expiry
-/// is swept lazily on acquire (no Flutter lifecycle dependency).
+/// last two host labels).
+///
+/// Reuse resets the instance first: it is navigated to `about:blank`, so
+/// the previous mission's URL, DOM and JS heap do not leak into the next
+/// one. The platform cookie store is global and is *not* reset. An
+/// instance's domain is the acquire-time affinity hint — the pool never
+/// observes navigation, so it is not re-derived — and it survives the
+/// reset, so a warm instance keeps serving the domain whose mission
+/// created it.
+///
+/// Caps and TTL keep the pool memory-safe; expiry is swept lazily on
+/// acquire (no Flutter lifecycle dependency).
 class WebviewPool {
   final WebviewService service;
   final WebviewSettings settings;
@@ -43,7 +53,8 @@ class WebviewPool {
   /// Returns the webview id for [sessionId], creating+running a fresh
   /// headless instance on first acquire. Same session always maps to the
   /// same instance; a warm idle instance on the same registrable domain
-  /// (from [domainHint]) is reused across sessions.
+  /// (from [domainHint]) is reset to `about:blank` and reused across
+  /// sessions.
   Future<String> acquire(String sessionId, {String? domainHint}) async {
     await _sweepExpired();
     final active = _instanceFor(sessionId);
@@ -54,6 +65,10 @@ class WebviewPool {
     if (domain != null) {
       for (final i in _held) {
         if (i.session == null && i.domain == domain) {
+          await service.loadUrl(
+            id: i.webviewId,
+            url: WebviewUri('about:blank'),
+          );
           i.session = sessionId;
           return i.webviewId;
         }

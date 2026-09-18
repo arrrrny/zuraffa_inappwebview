@@ -7,9 +7,13 @@ WebviewNavigationEvent _completed(String url) =>
     WebviewNavigationEvent.fromChannelArgs(
         {'type': 'completed', 'url': url});
 
-WebviewCaptureEntry _capture(String url) =>
-    WebviewCaptureEntry.fromChannelArgs(
-        {'url': url, 'method': 'GET', 'status': 200});
+WebviewCaptureEntry _capture(String url, {DateTime? at}) =>
+    WebviewCaptureEntry.fromChannelArgs({
+      'url': url,
+      'method': 'GET',
+      'status': 200,
+      if (at != null) 'at': at.toIso8601String(),
+    });
 
 void main() {
   group('US1 — recorder', () {
@@ -29,9 +33,8 @@ void main() {
 
       cap.add(_capture('https://x.dev/api'));
       nav.add(_completed('https://x.dev/a'));
-      await Future<void>.delayed(Duration.zero);
       nav.add(_completed('https://x.dev/b'));
-      await Future<void>.delayed(Duration.zero);
+      await pumpEventQueue();
 
       final cassette = await recorder.stop();
       expect(cassette.formatVersion, 1);
@@ -50,13 +53,56 @@ void main() {
       await cap.close();
     });
 
+    test('V1: a capture inside the freeze window belongs to the next entry',
+        () async {
+      final port = _VcrFakePort();
+      final gate = Completer<void>();
+      var htmlCalls = 0;
+      port.htmlFor = ({required String id}) async {
+        final call = ++htmlCalls;
+        if (call == 1) await gate.future;
+        return '<html>$call</html>';
+      };
+      final service = WebviewService(port: port);
+      await service.createHeadless(id: 'w');
+
+      final nav = StreamController<WebviewNavigationEvent>();
+      final cap = StreamController<WebviewCaptureEntry>();
+      final recorder = VcrRecorder(service: service, webviewId: 'w')
+        ..record(navigationEvents: nav.stream, captureEvents: cap.stream);
+
+      nav.add(_completed('https://x.dev/a'));
+      await pumpEventQueue(); // the first freeze is now parked on getHtml
+      cap.add(_capture('https://x.dev/api/belongs-to-b'));
+      await pumpEventQueue();
+      nav.add(_completed('https://x.dev/b'));
+      await pumpEventQueue();
+      gate.complete();
+
+      final cassette = await recorder.stop();
+      expect(
+        cassette.entries.map((e) => e.url),
+        ['https://x.dev/a', 'https://x.dev/b'],
+      );
+      // the capture arrived during /a's freeze, so it belongs to /b
+      expect(cassette.entries.first.captures, isEmpty);
+      expect(
+        cassette.entries.last.captures.map((c) => c.url),
+        ['https://x.dev/api/belongs-to-b'],
+      );
+
+      await nav.close();
+      await cap.close();
+    });
+
     test('V2: cassette JSON round-trip preserves entries', () {
+      final at = DateTime(2026, 1, 2, 3, 4, 5, 6, 7);
       final cassette = Cassette(entries: [
         CassetteEntry(
           url: 'https://x.dev/a',
           html: '<html/>',
           cookies: const [WebviewCookie(name: 'sid', value: '1')],
-          captures: [_capture('https://x.dev/api')],
+          captures: [_capture('https://x.dev/api', at: at)],
         ),
       ]);
       final back = Cassette.fromJson(cassette.toJson());
@@ -65,6 +111,19 @@ void main() {
       expect(back.entries.single.html, '<html/>');
       expect(back.entries.single.cookies.single.name, 'sid');
       expect(back.entries.single.captures.single.url, 'https://x.dev/api');
+      // the recorded instant survives, so a replayed capture is not
+      // re-stamped with wall-clock time
+      expect(back.entries.single.captures.single.at, at);
+    });
+
+    test('V2: an unsupported cassette format is refused', () {
+      expect(
+        () => Cassette.fromJson(const {'formatVersion': 2, 'entries': []}),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'vcr_unsupported_format')),
+      );
+      // a cassette predating the version key still reads as the current one
+      expect(Cassette.fromJson(const {'entries': []}).formatVersion, 1);
     });
 
     test('V2: recorded captures are defensively redacted', () async {
@@ -136,6 +195,38 @@ void main() {
       expect(port.lastHtml, '<html>A2</html>');
     });
 
+    test('V4: a path prefix only matches on a segment boundary', () async {
+      final replayer = VcrReplayer(
+        cassette: cassette,
+        service: service,
+        webviewId: 'w',
+      );
+      await expectLater(
+        replayer.loadUrl('https://x.dev/abc'),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'vcr_unmatched')),
+      );
+      expect(port.lastHtml, isNull);
+    });
+
+    test('V4: the same-origin check includes the port', () async {
+      final portScoped = Cassette(entries: const [
+        CassetteEntry(url: 'https://x.dev:8443/secure', html: '<html>S</html>'),
+      ]);
+      final replayer = VcrReplayer(
+        cassette: portScoped,
+        service: service,
+        webviewId: 'w',
+      );
+      await expectLater(
+        replayer.loadUrl('https://x.dev:9999/secure/sub'),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'vcr_unmatched')),
+      );
+      await replayer.loadUrl('https://x.dev:8443/secure/sub');
+      expect(port.lastHtml, '<html>S</html>');
+    });
+
     test('V5: strict unmatched -> typed vcr_unmatched naming the url',
         () async {
       final replayer = VcrReplayer(
@@ -191,6 +282,17 @@ void main() {
         'https://x.dev/api/2',
       ]);
       await sub.cancel();
+    });
+
+    test('V6: dispose closes the synthesized stream', () async {
+      final replayer = VcrReplayer(
+        cassette: cassette,
+        service: service,
+        webviewId: 'w',
+      );
+      final done = replayer.captureEvents.drain<void>();
+      await replayer.dispose();
+      await done;
     });
   });
 }

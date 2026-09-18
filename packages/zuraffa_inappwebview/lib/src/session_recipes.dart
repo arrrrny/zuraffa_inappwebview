@@ -3,6 +3,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'navigation_tracking.dart';
 import 'webview_service.dart';
@@ -134,7 +135,9 @@ Future<ReplayResult> replay(
 }
 
 /// [RecipeDriver] over [WebviewService] (spec 007 US3): loads validated
-/// urls and clicks selectors via the canonical tap script.
+/// urls and clicks selectors via the canonical tap script. The selector
+/// becomes a JSON string literal, so backslashes, quotes and control
+/// characters reach the browser as the caller wrote them.
 class WebviewServiceRecipeDriver implements RecipeDriver {
   final WebviewService service;
   final String webviewId;
@@ -154,8 +157,6 @@ class WebviewServiceRecipeDriver implements RecipeDriver {
   Future<void> tap(String selector) => service.evaluateJavascript(
         id: webviewId,
         source:
-            "(document.querySelector(${_quote(selector)}) ?? {click: null}).click()",
+            "(document.querySelector(${jsonEncode(selector)}) ?? {click: null}).click()",
       );
-
-  static String _quote(String raw) => "'${raw.replaceAll("'", r"\'")}'";
 }

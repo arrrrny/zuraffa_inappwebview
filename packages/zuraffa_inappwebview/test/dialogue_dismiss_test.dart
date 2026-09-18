@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:test/test.dart';
 import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
@@ -146,6 +148,35 @@ void main() {
       expect(source, isNot(contains('iframe')));
       expect(source, isNot(contains('contentWindow')));
     });
+
+    test(
+      'D3/D4: the payload removes fixed/sticky overlays and resets the roots',
+      () async {
+        final dir = Directory.systemTemp.createTempSync('dialogue-dismiss');
+        addTearDown(() => dir.deleteSync(recursive: true));
+        final harness = File('${dir.path}/harness.js')
+          ..writeAsStringSync(
+            _harness.replaceFirst('__SCRIPT__', DialogueDismissScript.source),
+          );
+
+        final result = Process.runSync(_nodePath!, [harness.path]);
+        expect(result.exitCode, 0, reason: 'node failed: ${result.stderr}');
+        final out =
+            jsonDecode(result.stdout as String) as Map<String, Object?>;
+
+        expect(out['removed'], 2);
+        expect(out['fixedRemoved'], isTrue);
+        expect(out['stickyRemoved'], isTrue);
+        expect(out['staticRemoved'], isFalse);
+        // the roots started dirty and came back cleared, proving the
+        // payload reset them rather than merely leaving them alone
+        expect(out['rootOverflow'], '');
+        expect(out['rootMargin'], '');
+        expect(out['bodyOverflow'], '');
+        expect(out['bodyMargin'], '');
+      },
+      skip: _nodePath == null ? 'node is not installed' : false,
+    );
   });
 
   group('US3 — policy', () {
@@ -201,3 +232,45 @@ void main() {
     });
   });
 }
+
+/// Behavioral harness (spec 002, US2): a minimal DOM — one `fixed`, one
+/// `sticky` and one `static` node, plus roots whose overflow/margin start
+/// dirty — for executing the payload under a real JS engine. A payload
+/// with a wrong operator, an early `return` or a missing `remove()` fails
+/// the assertions that read this output.
+const String _harness = r'''
+const elements = [
+  {id: 'fixed', position: 'fixed', removed: false},
+  {id: 'sticky', position: 'sticky', removed: false},
+  {id: 'static', position: 'static', removed: false},
+];
+for (const el of elements) {
+  el.remove = () => { el.removed = true; };
+}
+const documentElement = {style: {overflow: 'scroll', margin: 'scroll'}};
+const body = {style: {overflow: 'hidden', margin: '8px'}};
+const document = {
+  querySelectorAll: () => elements,
+  documentElement: documentElement,
+  body: body,
+};
+const window = {getComputedStyle: (el) => ({position: el.position})};
+const removed = __SCRIPT__;
+console.log(JSON.stringify({
+  removed: removed,
+  fixedRemoved: elements[0].removed,
+  stickyRemoved: elements[1].removed,
+  staticRemoved: elements[2].removed,
+  rootOverflow: documentElement.style.overflow,
+  rootMargin: documentElement.style.margin,
+  bodyOverflow: body.style.overflow,
+  bodyMargin: body.style.margin,
+}));
+''';
+
+/// `node`, or null when no engine is on PATH (the behavioral test skips).
+final String? _nodePath = () {
+  final which = Process.runSync('which', ['node']);
+  if (which.exitCode != 0) return null;
+  return (which.stdout as String).trim();
+}();

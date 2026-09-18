@@ -14,7 +14,7 @@ before implementation and the GREEN totals (116/116 repo-wide).
 | US1-1 fresh acquire creates+runs, counts | P1 |
 | US1-2 same session same id | P1 |
 | US1-3 release → warm idle | P2 |
-| US2-1 same eTLD+1 reuse | P3 |
+| US2-1 same eTLD+1 reuse | P3, P8 |
 | US2-2 cross-domain isolation | P4 |
 | US3-1 maxLive evicts idlest | P5a |
 | US3-2 pool_exhausted | P5b |
@@ -24,10 +24,12 @@ before implementation and the GREEN totals (116/116 repo-wide).
 ## Mutants (reasoned)
 
 - Remove affinity match → P3 fails (creates 2). Killed. ✓
-- Evict newest instead of idlest → P5a dispose count/identity breaks. Killed. ✓
+- Evict newest instead of idlest → P5a's `disposedIds` assertion fails. Killed. ✓
 - Throw pool_exhausted when idles exist → P5a fails. Killed. ✓
 - Skip the TTL sweep → P6 fails (same id reused). Killed. ✓
 - release() disposes instead of warming → P2 fails. Killed. ✓
+- Reuse without resetting the instance → P8 fails (no `about:blank` load).
+  Killed. ✓
 
 ## Gaps (non-blocking)
 

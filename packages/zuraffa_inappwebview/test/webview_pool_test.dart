@@ -7,7 +7,11 @@ import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
 class PoolFakePort implements WebviewPort {
   int creates = 0;
   int runs = 0;
-  int disposes = 0;
+  final List<String> disposedIds = [];
+  final List<(String, String)> loads = [];
+
+  /// How many instances were disposed (identity is in [disposedIds]).
+  int get disposes => disposedIds.length;
 
   @override
   Future<bool> isSupported() async => true;
@@ -23,14 +27,16 @@ class PoolFakePort implements WebviewPort {
   Future<void> runHeadless({required String id}) async => runs++;
 
   @override
-  Future<void> disposeHeadless({required String id}) async => disposes++;
+  Future<void> disposeHeadless({required String id}) async =>
+      disposedIds.add(id);
 
   @override
   Future<void> loadUrl({
     required String id,
     required WebviewUri url,
     Map<String, String> headers = const {},
-  }) async {}
+  }) async =>
+      loads.add((id, url.toString()));
 
   @override
   Future<String?> currentUrl({required String id}) async => null;
@@ -145,18 +151,31 @@ void main() {
       await pool.acquire('s2', domainHint: 'other.dev');
       expect(port.creates, 2);
     });
+
+    test('P8: a reused instance is reset before it is handed over', () async {
+      final pool = WebviewPool(service: service);
+      final first = await pool.acquire('s1', domainHint: 'shop.x.dev');
+      await pool.release('s1');
+      final second = await pool.acquire('s2', domainHint: 'x.dev');
+      expect(second, first);
+      expect(port.creates, 1);
+      // the previous mission's page state is dropped, not inherited
+      expect(port.loads, [(first, 'about:blank')]);
+    });
   });
 
   group('US3 — caps + eviction', () {
     test('P5a: maxLive evicts the idlest instance first', () async {
       final pool = WebviewPool(service: service, maxLive: 2);
-      await pool.acquire('s1', domainHint: 'a.dev');
+      final idle = await pool.acquire('s1', domainHint: 'a.dev');
       await pool.release('s1');
-      await pool.acquire('s2', domainHint: 'b.dev');
+      final active = await pool.acquire('s2', domainHint: 'b.dev');
       // pool now holds idle(a.dev) + active(b.dev) = 2 = maxLive
       await pool.acquire('s3', domainHint: 'c.dev');
-      expect(port.disposes, 1); // the idle a.dev instance was evicted
+      // the idle a.dev instance was evicted — not the active session
+      expect(port.disposedIds, [idle]);
       expect(pool.liveCount, 2);
+      expect(await pool.acquire('s2', domainHint: 'b.dev'), active);
     });
 
     test('P5b: saturated pool -> typed pool_exhausted', () async {

@@ -27,6 +27,15 @@ void main() {
       expect(e.isMainFrame, isFalse);
       expect(e.errorCode, 'net_err');
     });
+
+    test('N1: an unknown phase is a typed malformed_response', () {
+      expect(
+        () => WebviewNavigationEvent.fromChannelArgs(
+            const {'type': 'navigated', 'url': 'https://x.dev/'}),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+    });
   });
 
   group('US1 — service stream', () {
@@ -56,10 +65,10 @@ void main() {
       await sub.cancel();
     });
 
-    test('N2: unknown id -> not_created', () {
-      expect(
-        () => service.navigationEvents(id: 'nope'),
-        throwsA(isA<WebviewException>()
+    test('N2: unknown id -> not_created on the stream', () async {
+      await expectLater(
+        service.navigationEvents(id: 'nope'),
+        emitsError(isA<WebviewException>()
             .having((e) => e.code, 'code', 'not_created')),
       );
     });

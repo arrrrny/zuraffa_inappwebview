@@ -37,10 +37,11 @@ tests:    test/navigation_tracking_test.dart (app) + adapter test additions ×3
 | phase enum | `started / completed / failed` ← channel `type` |
 | event | `phase, url, isMainFrame (default true), errorCode?, at (clock)` |
 | tracker record `UrlVisit` | `url, phase, at, errorCode?` |
-| dedup | same url within `dedupWindow` collapses (keep earliest), applies per id |
+| dedup | a (phase + url) repeat immediately after the preceding visit within `dedupWindow` collapses into that visit; adjacency-scoped, applied per id |
 
 Cycle rule: among a webview's recorded visits, the latest url reappearing
-earlier in the record (non-consecutive repeat) ⇒ `hasCycle == true`.
+anywhere earlier in the record ⇒ `hasCycle == true` (consecutive repeats
+included, so A → A → A reports a cycle).
 
 ## MVP Definition
 

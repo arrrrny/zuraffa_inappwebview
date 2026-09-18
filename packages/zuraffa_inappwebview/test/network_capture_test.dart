@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:test/test.dart';
 import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
@@ -47,12 +48,6 @@ void main() {
         {'urlPattern': '/api/', 'maxBodyBytes': 512},
       );
     });
-
-    test('C6: filter.matches is a case-insensitive substring test', () {
-      const filter = WebviewCaptureFilter(urlPattern: '/API/');
-      expect(filter.matches(_entry(url: 'https://x.dev/api/v2')), isTrue);
-      expect(filter.matches(_entry(url: 'https://x.dev/img')), isFalse);
-    });
   });
 
   group('US1 — service guards', () {
@@ -81,10 +76,10 @@ void main() {
       );
     });
 
-    test('C2: captureEvents guards + unwired', () {
-      expect(
-        () => service.captureEvents(id: 'nope'),
-        throwsA(isA<WebviewException>()
+    test('C2: captureEvents guards + unwired', () async {
+      await expectLater(
+        service.captureEvents(id: 'nope'),
+        emitsError(isA<WebviewException>()
             .having((e) => e.code, 'code', 'not_created')),
       );
       expect(
@@ -127,7 +122,7 @@ void main() {
       manager.ingest(
         'w',
         _entry(
-          url: 'https://x.dev/p?token=abc&keep=1',
+          url: 'https://x.dev/p?keep=1&token=abc#frag',
           requestHeaders: {
             'Authorization': 'Bearer xyz',
             'Cookie': 'a=b',
@@ -139,8 +134,25 @@ void main() {
       expect(e.requestHeaders['Authorization'], '<redacted>');
       expect(e.requestHeaders['Cookie'], '<redacted>');
       expect(e.requestHeaders['Accept'], 'json');
-      expect(e.url, contains('token=<redacted>'));
-      expect(e.url, contains('keep=1'));
+      // Whole-string equality: the secret is last, the kept param survives
+      // and the fragment is not swallowed by the redacted param.
+      expect(e.url, 'https://x.dev/p?keep=1&token=<redacted>#frag');
+    });
+
+    test('C4: redactUrl is whole-string stable across fragment orders', () {
+      const redactor = CaptureSecretRedactor();
+      expect(
+        redactor.redactUrl('https://x.dev/p?token=abc#section-2'),
+        'https://x.dev/p?token=<redacted>#section-2',
+      );
+      expect(
+        redactor.redactUrl('https://x.dev/p#section-2'),
+        'https://x.dev/p#section-2',
+      );
+      expect(
+        redactor.redactUrl('https://x.dev/p?keep=1&api_key=abc&x=2'),
+        'https://x.dev/p?keep=1&api_key=<redacted>&x=2',
+      );
     });
 
     test('C4: redaction off keeps values verbatim', () {
@@ -173,6 +185,18 @@ void main() {
         ['https://x.dev/2', 'https://x.dev/3'],
       );
       expect(manager.entries('w').last.responseBody, hasLength(10));
+    });
+
+    test('C5: maxBodyBytes is a UTF-8 byte budget on a rune boundary', () {
+      final manager = NetworkCaptureManager(
+        budget: const CaptureBudget(maxBodyBytes: 3),
+      );
+      manager.ingest('w', _entry(responseBody: 'ab😀'));
+      final body = manager.entries('w').single.responseBody!;
+      // The emoji needs 4 bytes, so the budget stops before it — no lone
+      // surrogate is emitted.
+      expect(body, 'ab');
+      expect(utf8.encode(body), [97, 98]);
     });
   });
 }
