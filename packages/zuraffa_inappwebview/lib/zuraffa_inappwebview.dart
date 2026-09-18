@@ -33,6 +33,18 @@ export 'src/webview_module.dart'
 export 'src/webview_port.dart' show WebviewPort;
 export 'src/webview_service.dart' show UnwiredWebviewPort, WebviewService;
 export 'src/webview_pool.dart' show WebviewPool;
+export 'src/session_recipes.dart'
+    show
+        RecipeDriver,
+        RecipeRecorder,
+        RecipeStep,
+        RecipeTapStep,
+        RecipeUrlStep,
+        ReplayProgress,
+        ReplayResult,
+        SessionRecipe,
+        WebviewServiceRecipeDriver,
+        replay;
 export 'src/webview_types.dart'
     show
         ScreenshotConfiguration,
