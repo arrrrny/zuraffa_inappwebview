@@ -1,4 +1,5 @@
 import 'dialogue_dismiss.dart';
+import 'navigation_tracking.dart';
 import 'webview_exception.dart';
 import 'webview_port.dart';
 import 'webview_types.dart';
@@ -74,6 +75,28 @@ class WebviewService {
   Future<String?> getHtml({required String id}) async {
     _requireCreated(id);
     return port.getHtml(id: id);
+  }
+
+  /// Captures the rendered page as image bytes; null when the platform
+  /// could not capture (spec 003).
+  Future<List<int>?> takeScreenshot({
+    required String id,
+    ScreenshotConfiguration? config,
+  }) {
+    _requireCreated(id);
+    return port.takeScreenshot(id: id, config: config);
+  }
+
+  /// Exports the rendered page as PDF bytes; null on failure (spec 003).
+  Future<List<int>?> exportPdf({required String id}) {
+    _requireCreated(id);
+    return port.exportPdf(id: id);
+  }
+
+  /// Navigation events for the webview bound to [id] (spec 004).
+  Stream<WebviewNavigationEvent> navigationEvents({required String id}) {
+    _requireCreated(id);
+    return port.navigationEvents(id: id);
   }
 
   /// Removes fixed/sticky overlays from the loaded page for clean captures
@@ -185,6 +208,20 @@ class UnwiredWebviewPort implements WebviewPort {
 
   @override
   Future<String?> getHtml({required String id}) => _unwired();
+
+  @override
+  Future<List<int>?> takeScreenshot({
+    required String id,
+    ScreenshotConfiguration? config,
+  }) =>
+      _unwired();
+
+  @override
+  Future<List<int>?> exportPdf({required String id}) => _unwired();
+
+  @override
+  Stream<WebviewNavigationEvent> navigationEvents({required String id}) =>
+      _unwired();
 
   @override
   Future<void> setCookie(WebviewCookie cookie) => _unwired();

@@ -13,13 +13,24 @@ library;
 
 export 'src/dialogue_dismiss.dart'
     show DialogueDismissPolicy, DialogueDismissScript;
+export 'src/navigation_tracking.dart'
+    show
+        NavigationTracker,
+        UrlVisit,
+        WebviewNavigationEvent,
+        WebviewNavigationPhase;
 export 'src/webview_exception.dart';
 export 'src/webview_module.dart'
     show WebviewModule, registerWebview;
 export 'src/webview_port.dart' show WebviewPort;
 export 'src/webview_service.dart' show UnwiredWebviewPort, WebviewService;
 export 'src/webview_types.dart'
-    show WebviewCookie, WebviewSettings, WebviewUri;
+    show
+        ScreenshotConfiguration,
+        ScreenshotFormat,
+        WebviewCookie,
+        WebviewSettings,
+        WebviewUri;
 export 'src/webview_usecases.dart'
     show
         EvaluateJavascriptParams,

@@ -92,6 +92,34 @@ class WebviewSettings {
       };
 }
 
+/// Screenshot pixel format (spec 003).
+enum ScreenshotFormat { png, jpeg }
+
+/// Capture configuration for `takeScreenshot` (spec 003): format and JPEG
+/// quality (1–100, only meaningful for jpeg). Rect capture is a follow-up.
+class ScreenshotConfiguration {
+  final ScreenshotFormat format;
+  final int quality;
+
+  const ScreenshotConfiguration({
+    this.format = ScreenshotFormat.png,
+    this.quality = 100,
+  });
+
+  Map<String, Object?> toChannelArgs() =>
+      {'format': format.name, 'quality': quality};
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ScreenshotConfiguration &&
+          other.format == format &&
+          other.quality == quality;
+
+  @override
+  int get hashCode => Object.hash(format, quality);
+}
+
 /// A cookie for the webview's cookie store.
 class WebviewCookie {
   final String name;

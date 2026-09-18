@@ -79,6 +79,61 @@ class IosWebviewPort implements WebviewPort {
   }
 
   @override
+  Future<List<int>?> takeScreenshot({
+    required String id,
+    ScreenshotConfiguration? config,
+  }) async {
+    final result = await channel.call('takeScreenshot', {
+      'id': id,
+      if (config != null) ...config.toChannelArgs(),
+    });
+    return _decodeBytes(result?['data']);
+  }
+
+  @override
+  Future<List<int>?> exportPdf({required String id}) async {
+    final result = await channel.call('exportPdf', {'id': id});
+    return _decodeBytes(result?['data']);
+  }
+
+  List<int>? _decodeBytes(Object? raw) {
+    if (raw == null) return null;
+    if (raw is! List) {
+      throw const IosWebviewException(
+        'malformed_response',
+        'The capture result carried a non-list data payload.',
+        recoverable: false,
+      );
+    }
+    return [for (final b in raw) b as int];
+  }
+
+  @override
+  Stream<WebviewNavigationEvent> navigationEvents({required String id}) {
+    final source = channel.eventSource;
+    if (source == null) {
+      return Stream.error(const IosWebviewException(
+        'channel_not_wired',
+        'No event source was injected — pass one to the channel to '
+        'subscribe to navigation events.',
+        recoverable: false,
+      ));
+    }
+    return source('navigationEvents').asyncMap((raw) {
+      if (raw is! Map) {
+        throw const IosWebviewException(
+          'malformed_response',
+          'A navigation event carried a non-map payload.',
+          recoverable: false,
+        );
+      }
+      return Map<String, Object?>.from(raw);
+    }).where((map) => map['id'] == id).map(
+          WebviewNavigationEvent.fromChannelArgs,
+        );
+  }
+
+  @override
   Future<void> setCookie(WebviewCookie cookie) async {
     await channel.call('setCookie', cookie.toChannelArgs());
   }
