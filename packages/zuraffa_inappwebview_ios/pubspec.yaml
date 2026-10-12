@@ -9,7 +9,10 @@ environment:
   sdk: ^3.11.0
 
 dependencies:
-  zuraffa: ^6.3.0
+  # Aligned with the app-facing package for the 0.1.0 release — the adapters
+  # were left on ^6.3.0, which made the whole family unresolvable.
+  # See arrrrny/zuraffa_inappwebview#11.
+  zuraffa: ^7.0.0
   zuraffa_inappwebview: ^0.1.0
   zuraffa_inappwebview_platform: ^0.1.0
 
