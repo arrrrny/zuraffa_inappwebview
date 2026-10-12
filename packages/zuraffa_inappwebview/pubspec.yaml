@@ -9,7 +9,8 @@ environment:
   sdk: ^3.11.0
 
 dependencies:
-  zuraffa: ^6.3.0
+  # Zuraffa 7.x — the 6.x line is no longer maintained; 7.0.1 is current.
+  zuraffa: ^7.0.0
 
 dev_dependencies:
   lints: ^4.0.0
