@@ -1,3 +1,10 @@
+## [7.2.0] - 2026-10-28
+
+- Mono-version fleet alignment: the whole zuraffa family now ships at the same version as the core.
+- `zuraffa` dependency constraint unified to ^7.2.0 across the fleet.
+- zuraffa_storage now wraps the maintained `zuraffa_minio` fork instead of the abandoned `minio` package (xml 7 compatible).
+- Fleet-wide `dependency_overrides: xml: 7.1.0` policy; README install guides refreshed to the release version.
+
 # Changelog
 
 ## 0.1.0

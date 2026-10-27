@@ -33,3 +33,7 @@
 
 - `zikzak`-style sibling path overrides never need converting: pub ignores `dependency_overrides` when publishing.
 - Sibling packages fail `dart pub publish --dry-run` until their hosted in-family dependencies exist on pub.dev — publish in order and each dry-run goes green in turn.
+
+---
+
+**Mono version policy:** every package in the zuraffa fleet shares one version number. Bump the whole fleet with `../zuraffa/scripts/update_fleet.sh <version>`. Whenever a version is updated, the install guide in this repo's README.md MUST be updated to that release version in the same change — no old version constraints may linger in README install snippets. Dependency constraints on `zuraffa` itself must move to `^<version>` in the same bump.
