@@ -1,10 +1,10 @@
-## [7.3.0] - 2026-10-28
+## 7.3.0 - 2026-10-28
 
 - Mono-version fleet alignment: the whole zuraffa family ships at 7.3.0 together with the core.
 - `zuraffa` dependency constraints unified to ^7.3.0; cross-family constraints move with the release.
 - Fleet-wide `dependency_overrides: xml: 7.1.0`; README install guides refreshed to 7.3.0.
 
-## [7.2.0] - 2026-10-28
+## 7.2.0 - 2026-10-28
 
 - Mono-version fleet alignment: the whole zuraffa family now ships at the same version as the core.
 - `zuraffa` dependency constraint unified to ^7.2.0 across the fleet.
