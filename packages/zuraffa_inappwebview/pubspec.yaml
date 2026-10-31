@@ -2,7 +2,7 @@
 name: zuraffa_inappwebview
 description: >-
   Zuraffa-native in-app webview for Flutter — clean typed API, headless webview, cookies, sessions.
-version: 7.3.0
+version: 7.3.2
 homepage: https://zuraffa.com
 
 environment:
@@ -10,7 +10,7 @@ environment:
 
 dependencies:
   # Zuraffa 7.x — the 6.x line is no longer maintained; 7.0.1 is current.
-  zuraffa: ^7.3.0
+  zuraffa: ^7.3.2
 
 dev_dependencies:
   lints: ^4.0.0

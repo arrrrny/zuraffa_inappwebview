@@ -2,7 +2,7 @@
 name: zuraffa_inappwebview_macos
 description: >-
   Zuraffa-native in-app webview for Flutter — clean typed API, headless webview, cookies, sessions.
-version: 7.3.0
+version: 7.3.2
 homepage: https://zuraffa.com
 
 environment:
@@ -12,9 +12,9 @@ dependencies:
   # Aligned with the app-facing package for the 0.1.0 release — the adapters
   # were left on ^6.3.0, which made the whole family unresolvable.
   # See arrrrny/zuraffa_inappwebview#11.
-  zuraffa: ^7.3.0
-  zuraffa_inappwebview: ^7.3.0
-  zuraffa_inappwebview_platform: ^7.3.0
+  zuraffa: ^7.3.2
+  zuraffa_inappwebview: ^7.3.2
+  zuraffa_inappwebview_platform: ^7.3.2
 
 dev_dependencies:
   lints: ^4.0.0
