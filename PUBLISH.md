@@ -17,7 +17,7 @@
 ## Scripts
 
 - **Pre-publish**: `./scripts/prepare_for_publish.sh <version>` — creates `publish-<version>` branch, bumps all package versions + in-family constraints, propagates the root CHANGELOG entry into each package, commits
-- **Publish**: `./scripts/publish.sh` — dry-run + publish per package in order, waits for pub.dev propagation (needs flutter/dart on PATH)
+- **Publish**: `./scripts/publish.sh` — dry-run + publish per package in order, retries pub.dev's new-package rate limit with backoff (spaces the first publishes of a fresh family), waits for pub.dev propagation (needs flutter/dart on PATH)
 - **Post-publish**: `./scripts/push_to_master.sh -f` — merges the publish branch to master, tags, pushes, deletes the branch
 - **Restore dev**: not needed — `dependency_overrides` are stripped by pub on publish; nothing to convert back
 
@@ -26,7 +26,7 @@
 1. Write the release notes as a `## <version>` entry at the TOP of the root `CHANGELOG.md`
 2. `./scripts/prepare_for_publish.sh <version>`
 3. `git push origin publish-<version>`
-4. `bash scripts/publish.sh` (allow 10-30 min: propagation waits between packages)
+4. `bash scripts/publish.sh` (allow 10-30 min: propagation waits between packages; a first-ever publish also waits out pub.dev's new-package rate limit)
 5. `bash scripts/push_to_master.sh -f`
 
 ## Notes
