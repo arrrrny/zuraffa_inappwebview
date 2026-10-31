@@ -26,8 +26,6 @@ dependency_overrides:
     path: ../zuraffa_inappwebview
 
   xml: 7.1.0
-  zuraffa:
-    path: ../../../zuraffa
 repository: https://github.com/arrrrny/zuraffa_inappwebview
 issue_tracker: https://github.com/arrrrny/zuraffa_inappwebview/issues
 
