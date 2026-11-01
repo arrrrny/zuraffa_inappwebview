@@ -20,11 +20,6 @@ dev_dependencies:
   test: ^1.25.0
 
 dependency_overrides:
-  # Local development only — resolve the app-facing package to this
-  # checkout; stripped on publish.
-  zuraffa_inappwebview:
-    path: ../zuraffa_inappwebview
-
   xml: 7.1.0
 repository: https://github.com/arrrrny/zuraffa_inappwebview
 issue_tracker: https://github.com/arrrrny/zuraffa_inappwebview/issues
