@@ -1,3 +1,5 @@
+import 'navigation_tracking.dart';
+import 'network_capture.dart';
 import 'webview_types.dart';
 
 /// The platform-neutral port every adapter implements. Pure Dart — the
@@ -21,6 +23,14 @@ abstract class WebviewPort {
   /// Stops and releases the headless webview bound to [id].
   Future<void> disposeHeadless({required String id});
 
+  /// Renders [html] directly (no network) with an optional [baseUrl]
+  /// (spec 008 VCR replay). Channel: `loadHtml` with id + html + baseUrl.
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  });
+
   /// Loads [url] (with optional [headers]) in the webview bound to [id].
   Future<void> loadUrl({
     required String id,
@@ -39,6 +49,34 @@ abstract class WebviewPort {
 
   /// The serialized HTML of the main frame's current document.
   Future<String?> getHtml({required String id});
+
+  /// Captures the rendered page as image bytes (null when the platform
+  /// could not capture). Channel: `takeScreenshot`, response key `data`.
+  Future<List<int>?> takeScreenshot({
+    required String id,
+    ScreenshotConfiguration? config,
+  });
+
+  /// Exports the rendered page as PDF bytes (null on failure).
+  /// Channel: `exportPdf`, response key `data`.
+  Future<List<int>?> exportPdf({required String id});
+
+  /// Enables/disables XHR/fetch interception for the webview bound to
+  /// [id] (spec 005). Channel: `setCaptureEnabled` with id + filter args.
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  });
+
+  /// Intercepted traffic for the webview bound to [id] (spec 005).
+  /// Channel event method `captureEvents`, payload = entry + id.
+  Stream<WebviewCaptureEntry> captureEvents({required String id});
+
+  /// Navigation events pushed by the platform for the webview bound to
+  /// [id] (spec 004). Channel event method `navigationEvents`, payload
+  /// `{'id', 'type', 'url', 'isMainFrame', 'code'}`.
+  Stream<WebviewNavigationEvent> navigationEvents({required String id});
 
   /// Stores [cookie] in the webview's shared cookie store.
   Future<void> setCookie(WebviewCookie cookie);

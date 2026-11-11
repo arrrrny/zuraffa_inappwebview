@@ -27,6 +27,7 @@ void registerMacosWebviewDependencies(
           ? channel
           : MacosWebviewChannel(
               invoke: channel.invoke,
+              eventSource: channel.eventSource,
               timeout: timeout,
             );
   getIt.registerLazySingleton<WebviewPort>(

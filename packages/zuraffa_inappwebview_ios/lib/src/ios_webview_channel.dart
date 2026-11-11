@@ -16,10 +16,12 @@ class IosWebviewChannel {
   };
 
   final ChannelInvoke invoke;
+  final ChannelEventSource? eventSource;
   final Duration timeout;
 
   const IosWebviewChannel({
     required this.invoke,
+    this.eventSource,
     this.timeout = const Duration(seconds: 30),
   });
 
