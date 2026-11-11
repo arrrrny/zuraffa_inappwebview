@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:test/test.dart';
 import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
 
@@ -101,6 +103,30 @@ class RecordingWebviewPort implements WebviewPort {
   Future<String?> getHtml({required String id}) async => null;
 
   @override
+  Future<List<int>?> takeScreenshot({
+    required String id,
+    ScreenshotConfiguration? config,
+  }) async =>
+      null;
+
+  @override
+  Future<List<int>?> exportPdf({required String id}) async => null;
+
+  @override
+  Stream<WebviewNavigationEvent> navigationEvents({required String id}) =>
+      const Stream.empty();
+
+  @override
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) async {}
+
+  @override
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) =>
+      const Stream.empty();
+  @override
   Future<void> setCookie(WebviewCookie cookie) async {}
 
   @override
@@ -143,6 +169,11 @@ void main() {
     });
   });
 
+  // D3–D5 are contract-pinning tests: they pin the shape of the canonical
+  // script payload handed to the platform, not its runtime effect. A JS
+  // engine only exists in the native shell, so behavioral coverage of the
+  // script belongs to the adapter/e2e tier where `evaluateJavascript`
+  // actually runs.
   group('US2 — canonical script', () {
     final source = DialogueDismissScript.source;
 

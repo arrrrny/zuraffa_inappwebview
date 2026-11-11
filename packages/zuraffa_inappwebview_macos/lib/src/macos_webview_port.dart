@@ -79,6 +79,105 @@ class MacosWebviewPort implements WebviewPort {
   }
 
   @override
+  Future<List<int>?> takeScreenshot({
+    required String id,
+    ScreenshotConfiguration? config,
+  }) async {
+    final result = await channel.call('takeScreenshot', {
+      'id': id,
+      if (config != null) ...config.toChannelArgs(),
+    });
+    return _decodeBytes(result?['data']);
+  }
+
+  @override
+  Future<List<int>?> exportPdf({required String id}) async {
+    final result = await channel.call('exportPdf', {'id': id});
+    return _decodeBytes(result?['data']);
+  }
+
+  List<int>? _decodeBytes(Object? raw) {
+    if (raw == null) return null;
+    // A Uint8List/List<int> from the platform codec already satisfies the
+    // contract — return it as-is instead of copying multi-MB payloads.
+    if (raw is List<int>) return raw;
+    throw const MacosWebviewException(
+      'malformed_response',
+      'The capture result carried a non-int byte payload.',
+      recoverable: false,
+    );
+  }
+
+  @override
+  Stream<WebviewNavigationEvent> navigationEvents({required String id}) {
+    final source = channel.eventSource;
+    if (source == null) {
+      return Stream.error(const MacosWebviewException(
+        'channel_not_wired',
+        'No event source was injected — pass one to the channel to '
+        'subscribe to navigation events.',
+        recoverable: false,
+      ));
+    }
+    // Foreign payloads are dropped before decoding, so a malformed event
+    // for another webview can never error this subscription; a non-map
+    // payload still surfaces the typed `malformed_response` (US4-2).
+    return source('navigationEvents')
+        .where((raw) => raw is! Map || raw['id'] == id)
+        .asyncMap((raw) {
+      if (raw is! Map) {
+        throw const MacosWebviewException(
+          'malformed_response',
+          'A navigation event carried a non-map payload.',
+          recoverable: false,
+        );
+      }
+      return Map<String, Object?>.from(raw);
+    }).map(WebviewNavigationEvent.fromChannelArgs);
+  }
+
+  @override
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) async {
+    await channel.call('setCaptureEnabled', {
+      'id': id,
+      'enabled': enabled,
+      if (filter != null) ...filter.toChannelArgs(),
+    });
+  }
+
+  @override
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) {
+    final source = channel.eventSource;
+    if (source == null) {
+      return Stream.error(const MacosWebviewException(
+        'channel_not_wired',
+        'No event source was injected — pass one to the channel to '
+        'subscribe to capture events.',
+        recoverable: false,
+      ));
+    }
+    // Same id-scoping as navigationEvents: foreign payloads are dropped
+    // before decoding, while a non-map payload still surfaces the typed
+    // `malformed_response`.
+    return source('captureEvents')
+        .where((raw) => raw is! Map || raw['id'] == id)
+        .asyncMap((raw) {
+      if (raw is! Map) {
+        throw const MacosWebviewException(
+          'malformed_response',
+          'A capture event carried a non-map payload.',
+          recoverable: false,
+        );
+      }
+      return Map<String, Object?>.from(raw);
+    }).map(WebviewCaptureEntry.fromChannelArgs);
+  }
+
+  @override
   Future<void> setCookie(WebviewCookie cookie) async {
     await channel.call('setCookie', cookie.toChannelArgs());
   }
