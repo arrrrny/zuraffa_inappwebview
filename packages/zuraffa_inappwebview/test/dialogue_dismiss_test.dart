@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:test/test.dart';
 import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
 
@@ -100,6 +102,30 @@ class RecordingWebviewPort implements WebviewPort {
   @override
   Future<String?> getHtml({required String id}) async => null;
 
+  @override
+  Future<List<int>?> takeScreenshot({
+    required String id,
+    ScreenshotConfiguration? config,
+  }) async =>
+      null;
+
+  @override
+  Future<List<int>?> exportPdf({required String id}) async => null;
+
+  @override
+  Stream<WebviewNavigationEvent> navigationEvents({required String id}) =>
+      const Stream.empty();
+
+  @override
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) async {}
+
+  @override
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) =>
+      const Stream.empty();
   @override
   Future<void> setCookie(WebviewCookie cookie) async {}
 
