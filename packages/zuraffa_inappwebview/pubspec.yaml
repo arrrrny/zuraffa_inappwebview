@@ -29,5 +29,3 @@ topics:
 dependency_overrides:
   xml: 7.1.0
 
-  zuraffa:
-    path: ../../../zuraffa
