@@ -1,3 +1,7 @@
+## 7.6.0 - 2026-11-19
+
+Fleet release 7.6.0: zuraffa_observability moves its OTel base to dartastic_opentelemetry with a sealed test-capture seam + facade re-exports (issue #4); zuraffa_vendure + zuraffa_graphql adopt graphql_plus ^5.3.0; fleet-wide zorphy/zorphy_annotation raised to ^2.5.1 with all entities regenerated from scratch.
+
 ## 7.5.0 - 2026-11-15
 
 Release 7.5.0: Signal-backed view-state migration template with SignalScope ownership (#2076); signal listener/subscription cleanup on eager-delivery throw (#2081, #2083); UseCase/StreamUseCase catch-all SEVERE logs now carry the cause (#2077, #2079); dependencies upgraded and pinned to latest resolvable.
