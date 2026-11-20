@@ -1,7 +1,7 @@
 # Federated plugin monorepo created by `zfa package create-plugin` (issue #1604).
 name: zuraffa_inappwebview_android
 description: >-
-  Zuraffa-native in-app webview for Flutter — clean typed API, headless webview, cookies, sessions.
+  Zuraffa-native in-app webview for Flutter - clean typed API, headless webview, cookies, sessions.
 version: 7.6.1
 homepage: https://zuraffa.com
 
@@ -9,7 +9,7 @@ environment:
   sdk: ^3.11.0
 
 dependencies:
-  # Aligned with the app-facing package for the 0.1.0 release — the adapters
+  # Aligned with the app-facing package for the 0.1.0 release - the adapters
   # were left on ^6.3.0, which made the whole family unresolvable.
   # See arrrrny/zuraffa_inappwebview#11.
   zuraffa: ^7.6.1
