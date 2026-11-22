@@ -46,7 +46,10 @@ chat widgets, and sticky navbars, then calls
 canonical built-in script in the webview: elements with computed
 `position: fixed` or `position: sticky` are removed from the top-level
 document, and `overflow`/`margin` are reset on `documentElement` and `body`
-so captures have no scrollbar artifacts. The call is a no-op-safe typed
+so captures have no scrollbar artifacts. The two document roots are never
+removed — either may legitimately compute to `fixed` (the common
+`body { position: fixed }` scroll-lock behind modals), and removing them
+would blank the capture silently. The call is a no-op-safe typed
 operation: unknown ids fail `not_created`; JavaScript errors during removal
 are swallowed (they must never break the webview or the caller's flow).
 
@@ -63,9 +66,9 @@ script source removes fixed/sticky elements and resets overflow/margin.
    called, **Then** the port receives one `evaluateJavascript` call whose
    source is the canonical `DialogueDismissScript.source`.
 2. **Given** the canonical script, **When** inspected, **Then** it removes
-   `position: fixed`/`position: sticky` elements, resets
-   `documentElement`/`body` overflow and margin, and touches only the
-   top-level document (no iframe recursion).
+   `position: fixed`/`position: sticky` elements other than
+   `documentElement`/`body`, resets `documentElement`/`body` overflow and
+   margin, and touches only the top-level document (no iframe recursion).
 3. **Given** an id that was never created, **When** `dismissDialogues(id)` is
    called, **Then** it throws the typed `not_created` failure.
 4. **Given** the port raises a JS evaluation error for the dismissal call,
@@ -103,8 +106,11 @@ port received exactly `attempts` evaluations.
 - **FR-1**: `WebviewSettings` gains `dismissDialogues` (bool, default
   `false`), serialized in `toChannelArgs()` as `dismissDialogues`.
 - **FR-2**: A pure-Dart canonical script (`DialogueDismissScript.source`)
-  removes top-level `position: fixed`/`position: sticky` elements and resets
-  `overflow`/`margin` on `documentElement` and `body`.
+  removes top-level `position: fixed`/`position: sticky` elements — except
+  the document roots `documentElement` and `body` — and resets
+  `overflow`/`margin` on those two roots. Neither root is ever removed:
+  either may legitimately compute to `fixed`, and removing it would blank
+  the page while still reporting a positive removed count.
 - **FR-3**: `WebviewService.dismissDialogues({id, policy})` evaluates the
   canonical script through the port, once per policy attempt, with the
   policy delay between attempts.
