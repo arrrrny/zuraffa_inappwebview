@@ -63,9 +63,11 @@ test/
 | `DialogueDismissPolicy` | `attempts: int` (min 1, default 1), `delay: Duration` (default 0) | n/a |
 
 The canonical script: query all elements in `document`, read computed
-`position`, hide `fixed`/`sticky` ones (`display: none`, reversible), then
-reset `overflow`/`margin` on `documentElement` and `body`. Guarded by
-try/catch inside the script and never touches `window.frames` (FR-6).
+`position`, collect the `fixed`/`sticky` matches (excluding the two document
+roots, which are reset rather than hidden), then hide them in a second pass
+(`display: none`, reversible) and reset `overflow`/`margin` on
+`documentElement` and `body`. Guarded by try/catch inside the script and
+never touches `window.frames` (FR-6).
 
 ## contracts/
 

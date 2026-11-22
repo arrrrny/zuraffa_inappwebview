@@ -40,7 +40,10 @@ tree at branch `002-dismiss-dialogues`.
 - Remove the `on Exception` swallow → D9 fails. Killed. ✓
 - Drop the `not_created` guard → D8 fails (fake port would accept any id).
   Killed. ✓
-- Remove the sticky branch in the script source → D3 fails. Killed. ✓
+- Remove the sticky branch in the script source → D3 fails (the shipped
+  source is golden-pinned, so any edit is caught). Killed. ✓
+- Remove the `documentElement`/`body` exclusion from the sweep → D3 fails
+  (same golden pin). Killed. ✓
 
 ## Gaps (non-blocking)
 
@@ -48,5 +51,17 @@ tree at branch `002-dismiss-dialogues`.
   timing would be flaky; the delay wiring is visible in the implementation
   and exercised by D10's policy path.
 - In-browser execution of the canonical script is a native/browser
-  milestone (no JS runtime in this repo's VM tests) — D3–D5 pin the script's
-  contract markers instead, matching the spec's Dart-side scope.
+  milestone (no JS runtime in this repo's VM tests) — D3/D4 pin the shipped
+  source against a whitespace-normalized golden copy (D3 the whole script,
+  D4 the reset block) and D5 pins the negative frame-recursion contract,
+  matching the spec's Dart-side scope.
+
+## Review delta (PR #1)
+
+The verdict above was re-checked against the tree after the PR #1 review
+fixes (cycle-log "Cycle 2"): the script gained the
+`documentElement`/`body` exclusion and the collect-then-remove pass, D3/D4
+became golden pins instead of marker checks, and `tasks.md` behavior refs
+were aligned with `tdd/test-list.md`. Coverage table, smells, and mutants
+above still hold; the mutation check was re-run against the new golden pin.
+Verdict unchanged: **PASS**.
