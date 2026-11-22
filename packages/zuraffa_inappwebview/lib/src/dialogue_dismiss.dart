@@ -1,19 +1,23 @@
 /// Canonical dialogue dismissal for clean captures (spec 002).
 ///
 /// Removes fixed/sticky overlays (cookie banners, chat widgets, sticky
-/// navbars) from the top-level document and forces overflow/margin on the
-/// document roots past stylesheet rules so screenshots and PDF exports
-/// carry no scrollbar artifacts. Pure Dart — the script is a payload
-/// evaluated through the existing `evaluateJavascript` port op, so no new
-/// channel contract is needed.
+/// navbars) from the top-level document and resets overflow/margin so
+/// screenshots and PDF exports carry no scrollbar artifacts. Pure Dart —
+/// the script is a payload evaluated through the existing
+/// `evaluateJavascript` port op, so no new channel contract is needed.
 library;
 
 /// The canonical overlay-removal script.
 ///
 /// Contract (spec 002, FR-2/FR-6): removes every element whose computed
-/// position is `fixed` or `sticky`, overrides `overflow`/`margin` on
-/// `documentElement` and `body`, touches only the top-level document, and
-/// never throws — the whole body is guarded, returning the removed count.
+/// position is `fixed` or `sticky` except the two document roots —
+/// `documentElement` and `body` may legitimately be `fixed` themselves (the
+/// common `body { position: fixed }` scroll-lock used behind modals), and
+/// removing them would blank the page while still reporting `removed > 0`.
+/// Resets `overflow`/`margin` on those roots instead, touches only the
+/// top-level document, and never throws — the whole body is guarded,
+/// returning the removed count. Matches are collected before any removal so
+/// `getComputedStyle` is not interleaved with DOM mutations.
 ///
 /// Two costs callers should know about:
 ///
@@ -27,9 +31,7 @@ library;
 /// * **The scan is O(document).** `querySelectorAll('*')` plus one
 ///   `getComputedStyle` read per element forces a style recalc across every
 ///   node — tens of ms on a multi-thousand-element page, right before a
-///   capture you want fast. Nodes already detached by an earlier removal are
-///   skipped, so the count never double-counts a removed overlay's
-///   descendants.
+///   capture you want fast.
 class DialogueDismissScript {
   const DialogueDismissScript._();
 
@@ -38,20 +40,22 @@ class DialogueDismissScript {
   try {
     var removed = 0;
     var all = document.querySelectorAll('*');
+    var doomed = [];
     for (var i = 0; i < all.length; i++) {
       var el = all[i];
-      if (!el.isConnected) continue;
+      if (el === document.documentElement || el === document.body) continue;
       var pos = window.getComputedStyle(el).position;
-      if (pos === 'fixed' || pos === 'sticky') {
-        el.remove();
-        removed++;
-      }
+      if (pos === 'fixed' || pos === 'sticky') doomed.push(el);
+    }
+    for (var k = 0; k < doomed.length; k++) {
+      doomed[k].remove();
+      removed++;
     }
     var roots = [document.documentElement, document.body];
     for (var j = 0; j < roots.length; j++) {
       if (!roots[j]) continue;
-      roots[j].style.setProperty('overflow', 'auto', 'important');
-      roots[j].style.setProperty('margin', '0', 'important');
+      roots[j].style.overflow = '';
+      roots[j].style.margin = '';
     }
     return removed;
   } catch (e) {
