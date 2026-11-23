@@ -90,6 +90,23 @@ class WebviewPool {
       }
     }
 
+    // The reuse loop above already claimed any idle same-domain instance,
+    // so every same-domain instance left is active: eviction cannot help
+    // and the acquire genuinely exceeds the per-domain cap. Checked BEFORE
+    // the maxLive eviction so an acquire that is going to fail leaves the
+    // pool untouched instead of first destroying another domain's idle.
+    if (domain != null) {
+      final sameDomain = _held.where((i) => i.domain == domain).length;
+      if (sameDomain >= maxPerDomain) {
+        throw WebviewException(
+          'pool_exhausted',
+          'Domain "$domain" already holds $maxPerDomain live instances — '
+          'release one before acquiring.',
+          recoverable: true,
+        );
+      }
+    }
+
     if (_held.length >= maxLive) {
       final idle = _idlest(_held.where((i) => i.session == null));
       if (idle == null) {
@@ -101,21 +118,6 @@ class WebviewPool {
         );
       }
       await _dispose(idle);
-    }
-
-    // The reuse loop above already claimed any idle same-domain instance,
-    // so every same-domain instance left is active: eviction cannot help
-    // and the acquire genuinely exceeds the per-domain cap.
-    if (domain != null) {
-      final sameDomain = _held.where((i) => i.domain == domain).length;
-      if (sameDomain >= maxPerDomain) {
-        throw WebviewException(
-          'pool_exhausted',
-          'Domain "$domain" already holds $maxPerDomain live instances — '
-          'release one before acquiring.',
-          recoverable: true,
-        );
-      }
     }
 
     final id = 'pool-${++_counter}';
@@ -152,12 +154,33 @@ class WebviewPool {
   }
 
   /// eTLD+1 approximation: the last two host labels (`shop.x.dev` →
-  /// `x.dev`). Single-label hosts map to themselves. Multi-part TLDs
-  /// (co.uk) are a documented follow-up.
+  /// `x.dev`). Single-label hosts map to themselves. IP literals are
+  /// returned verbatim — the last-two-labels rule would collapse
+  /// `127.0.0.1` and `10.0.0.1` onto one bucket and hand an unrelated
+  /// host a warm instance. Multi-part TLDs (co.uk) are a documented
+  /// follow-up.
   static String registrableDomain(String host) {
     final labels = host.split('.');
     if (labels.length <= 2) return host;
+    if (_looksLikeIp(host)) return host;
     return labels.sublist(labels.length - 2).join('.');
+  }
+
+  /// Whether [host] is an IP literal (v4 or v6, with or without brackets).
+  /// Kept dependency-free: the core package has no `dart:io` import.
+  static bool _looksLikeIp(String host) {
+    final bare = host.startsWith('[') && host.endsWith(']')
+        ? host.substring(1, host.length - 1)
+        : host;
+    if (bare.contains(':')) return true; // IPv6
+    final labels = bare.split('.');
+    if (labels.length != 4) return false;
+    for (final label in labels) {
+      if (label.isEmpty || label.length > 3) return false;
+      final value = int.tryParse(label);
+      if (value == null || value < 0 || value > 255) return false;
+    }
+    return true;
   }
 
   _PooledInstance? _instanceFor(String sessionId) {
