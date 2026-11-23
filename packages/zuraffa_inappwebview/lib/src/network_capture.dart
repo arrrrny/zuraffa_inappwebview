@@ -31,12 +31,14 @@ class WebviewCaptureEntry {
       WebviewCaptureEntry(
         url: args['url'] as String? ?? '',
         method: args['method'] as String? ?? 'GET',
-        requestHeaders:
-            Map<String, String>.from(args['requestHeaders'] as Map? ?? {}),
+        requestHeaders: Map<String, String>.from(
+          args['requestHeaders'] as Map? ?? {},
+        ),
         requestBody: args['requestBody'] as String?,
         status: args['status'] as int?,
-        responseHeaders:
-            Map<String, String>.from(args['responseHeaders'] as Map? ?? {}),
+        responseHeaders: Map<String, String>.from(
+          args['responseHeaders'] as Map? ?? {},
+        ),
         responseBody: args['responseBody'] as String?,
       );
 }
@@ -50,12 +52,13 @@ class WebviewCaptureFilter {
   const WebviewCaptureFilter({this.urlPattern, this.maxBodyBytes});
 
   Map<String, Object?> toChannelArgs() => {
-        if (urlPattern != null) 'urlPattern': urlPattern,
-        if (maxBodyBytes != null) 'maxBodyBytes': maxBodyBytes,
-      };
+    if (urlPattern != null) 'urlPattern': urlPattern,
+    if (maxBodyBytes != null) 'maxBodyBytes': maxBodyBytes,
+  };
 
   /// Whether [entry] passes the URL pattern (absent pattern = match all).
-  bool matches(WebviewCaptureEntry entry) => urlPattern == null ||
+  bool matches(WebviewCaptureEntry entry) =>
+      urlPattern == null ||
       entry.url.toLowerCase().contains(urlPattern!.toLowerCase());
 }
 
@@ -70,11 +73,9 @@ class CaptureBudget {
   final int maxEntries;
   final int maxBodyBytes;
 
-  const CaptureBudget({
-    int maxEntries = 500,
-    int maxBodyBytes = 50 * 1024,
-  })  : maxEntries = maxEntries < 0 ? 0 : maxEntries,
-        maxBodyBytes = maxBodyBytes < 0 ? 0 : maxBodyBytes;
+  const CaptureBudget({int maxEntries = 500, int maxBodyBytes = 50 * 1024})
+    : maxEntries = maxEntries < 0 ? 0 : maxEntries,
+      maxBodyBytes = maxBodyBytes < 0 ? 0 : maxBodyBytes;
 }
 
 /// Marker substituted for any redacted secret value (zikzak A15).
@@ -85,6 +86,10 @@ const Set<String> _redactedHeaderKeys = {
   'proxy-authorization',
   'cookie',
   'set-cookie',
+  'x-api-key',
+  'x-csrf-token',
+  'x-auth-token',
+  'x-amz-security-token',
 };
 
 const Set<String> _redactedParamKeys = {
@@ -97,6 +102,12 @@ const Set<String> _redactedParamKeys = {
   'access_token',
   'refresh_token',
   'client_secret',
+  'key',
+  'signature',
+  'sig',
+  'hmac',
+  'session_id',
+  'auth',
 };
 
 /// Source-level redaction of auth-shaped secrets (spec 005 FR-4):
@@ -106,22 +117,22 @@ class CaptureSecretRedactor {
   const CaptureSecretRedactor();
 
   WebviewCaptureEntry redact(WebviewCaptureEntry entry) => WebviewCaptureEntry(
-        url: redactUrl(entry.url),
-        method: entry.method,
-        requestHeaders: _redactHeaders(entry.requestHeaders),
-        requestBody: entry.requestBody,
-        status: entry.status,
-        responseHeaders: _redactHeaders(entry.responseHeaders),
-        responseBody: entry.responseBody,
-        at: entry.at,
-      );
+    url: redactUrl(entry.url),
+    method: entry.method,
+    requestHeaders: _redactHeaders(entry.requestHeaders),
+    requestBody: entry.requestBody,
+    status: entry.status,
+    responseHeaders: _redactHeaders(entry.responseHeaders),
+    responseBody: entry.responseBody,
+    at: entry.at,
+  );
 
   Map<String, String> _redactHeaders(Map<String, String> headers) => {
-        for (final e in headers.entries)
-          e.key: _redactedHeaderKeys.contains(e.key.toLowerCase())
-              ? kRedactionMarker
-              : e.value,
-      };
+    for (final e in headers.entries)
+      e.key: _redactedHeaderKeys.contains(e.key.toLowerCase())
+          ? kRedactionMarker
+          : e.value,
+  };
 
   /// Redacts auth-shaped query parameters, preserving structure and
   /// non-secret params. Rebuilt as a raw string so the marker is not
@@ -218,8 +229,7 @@ class NetworkCaptureManager {
   void ingest(String id, WebviewCaptureEntry entry) {
     final buffered = _entries.putIfAbsent(id, () => []);
     var e = redactAuth ? _redactor.redact(entry) : entry;
-    if (e.requestBody != null &&
-        e.requestBody!.length > budget.maxBodyBytes) {
+    if (e.requestBody != null && e.requestBody!.length > budget.maxBodyBytes) {
       e = _copyWith(
         e,
         requestBody: _truncate(e.requestBody!, budget.maxBodyBytes),
@@ -259,15 +269,14 @@ class NetworkCaptureManager {
     WebviewCaptureEntry e, {
     String? requestBody,
     String? responseBody,
-  }) =>
-      WebviewCaptureEntry(
-        url: e.url,
-        method: e.method,
-        requestHeaders: e.requestHeaders,
-        requestBody: requestBody ?? e.requestBody,
-        status: e.status,
-        responseHeaders: e.responseHeaders,
-        responseBody: responseBody ?? e.responseBody,
-        at: e.at,
-      );
+  }) => WebviewCaptureEntry(
+    url: e.url,
+    method: e.method,
+    requestHeaders: e.requestHeaders,
+    requestBody: requestBody ?? e.requestBody,
+    status: e.status,
+    responseHeaders: e.responseHeaders,
+    responseBody: responseBody ?? e.responseBody,
+    at: e.at,
+  );
 }
