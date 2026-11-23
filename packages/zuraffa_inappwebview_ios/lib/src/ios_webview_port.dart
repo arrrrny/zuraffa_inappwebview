@@ -67,8 +67,10 @@ class IosWebviewPort implements WebviewPort {
     required String id,
     required String source,
   }) async {
-    final result =
-        await channel.call('evaluateJavascript', {'id': id, 'source': source});
+    final result = await channel.call('evaluateJavascript', {
+      'id': id,
+      'source': source,
+    });
     return result?['result'];
   }
 
@@ -127,25 +129,30 @@ class IosWebviewPort implements WebviewPort {
   Stream<WebviewNavigationEvent> navigationEvents({required String id}) {
     final source = channel.eventSource;
     if (source == null) {
-      return Stream.error(const IosWebviewException(
-        'channel_not_wired',
-        'No event source was injected — pass one to the channel to '
-        'subscribe to navigation events.',
-        recoverable: false,
-      ));
-    }
-    return source('navigationEvents').asyncMap((raw) {
-      if (raw is! Map) {
-        throw const IosWebviewException(
-          'malformed_response',
-          'A navigation event carried a non-map payload.',
+      return Stream.error(
+        const IosWebviewException(
+          'channel_not_wired',
+          'No event source was injected — pass one to the channel to '
+              'subscribe to navigation events.',
           recoverable: false,
-        );
-      }
-      return Map<String, Object?>.from(raw);
-    }).where((map) => map['id'] == id).map(
-          WebviewNavigationEvent.fromChannelArgs,
-        ).where((event) => event != null).cast<WebviewNavigationEvent>();
+        ),
+      );
+    }
+    return source('navigationEvents')
+        .asyncMap((raw) {
+          if (raw is! Map) {
+            throw const IosWebviewException(
+              'malformed_response',
+              'A navigation event carried a non-map payload.',
+              recoverable: false,
+            );
+          }
+          return Map<String, Object?>.from(raw);
+        })
+        .where((map) => map['id'] == id)
+        .map(WebviewNavigationEvent.fromChannelArgs)
+        .where((event) => event != null)
+        .cast<WebviewNavigationEvent>();
   }
 
   @override
@@ -178,25 +185,31 @@ class IosWebviewPort implements WebviewPort {
   Stream<WebviewCaptureEntry> captureEvents({required String id}) {
     final source = channel.eventSource;
     if (source == null) {
-      return Stream.error(const IosWebviewException(
-        'channel_not_wired',
-        'No event source was injected — pass one to the channel to '
-        'subscribe to capture events.',
-        recoverable: false,
-      ));
-    }
-    return source('captureEvents').asyncMap((raw) {
-      if (raw is! Map) {
-        throw const IosWebviewException(
-          'malformed_response',
-          'A capture event carried a non-map payload.',
+      return Stream.error(
+        const IosWebviewException(
+          'channel_not_wired',
+          'No event source was injected — pass one to the channel to '
+              'subscribe to capture events.',
           recoverable: false,
-        );
-      }
-      return Map<String, Object?>.from(raw);
-    }).where((map) => map['id'] == id).map(
-          WebviewCaptureEntry.fromChannelArgs,
-        );
+        ),
+      );
+    }
+    // Foreign payloads are dropped before decoding, so a malformed event for
+    // another webview can never error this subscription; a non-map payload
+    // still surfaces the typed `malformed_response`.
+    return source('captureEvents')
+        .where((raw) => raw is! Map || raw['id'] == id)
+        .asyncMap((raw) {
+          if (raw is! Map) {
+            throw const IosWebviewException(
+              'malformed_response',
+              'A capture event carried a non-map payload.',
+              recoverable: false,
+            );
+          }
+          return Map<String, Object?>.from(raw);
+        })
+        .map(WebviewCaptureEntry.fromChannelArgs);
   }
 
   @override
@@ -226,8 +239,9 @@ class IosWebviewPort implements WebviewPort {
         );
       }
       try {
-        cookies.add(WebviewCookie.fromChannelArgs(
-            Map<String, Object?>.from(entry)));
+        cookies.add(
+          WebviewCookie.fromChannelArgs(Map<String, Object?>.from(entry)),
+        );
       } on Object catch (error) {
         throw IosWebviewException(
           'malformed_response',

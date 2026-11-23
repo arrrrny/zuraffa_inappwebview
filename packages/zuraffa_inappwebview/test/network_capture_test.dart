@@ -10,16 +10,15 @@ WebviewCaptureEntry _entry({
   String? requestBody,
   int? status = 200,
   String? responseBody = '{"ok":true}',
-}) =>
-    WebviewCaptureEntry.fromChannelArgs({
-      'url': url,
-      'method': method,
-      'requestHeaders': requestHeaders,
-      if (requestBody != null) 'requestBody': requestBody,
-      'status': status,
-      'responseHeaders': const <String, String>{},
-      if (responseBody != null) 'responseBody': responseBody,
-    });
+}) => WebviewCaptureEntry.fromChannelArgs({
+  'url': url,
+  'method': method,
+  'requestHeaders': requestHeaders,
+  if (requestBody != null) 'requestBody': requestBody,
+  'status': status,
+  'responseHeaders': const <String, String>{},
+  if (responseBody != null) 'responseBody': responseBody,
+});
 
 void main() {
   group('US1 — codec + filter', () {
@@ -76,27 +75,41 @@ void main() {
       expect(port.lastCaptureFilter?.urlPattern, '/api/');
       expect(
         () => service.setCaptureEnabled(id: 'nope', enabled: true),
-        throwsA(isA<WebviewException>()
-            .having((e) => e.code, 'code', 'not_created')),
+        throwsA(
+          isA<WebviewException>().having((e) => e.code, 'code', 'not_created'),
+        ),
       );
     });
 
     test('C2: captureEvents guards + unwired', () {
       expect(
         () => service.captureEvents(id: 'nope'),
-        throwsA(isA<WebviewException>()
-            .having((e) => e.code, 'code', 'not_created')),
+        throwsA(
+          isA<WebviewException>().having((e) => e.code, 'code', 'not_created'),
+        ),
       );
       expect(
         () => const UnwiredWebviewPort().captureEvents(id: 'w'),
-        throwsA(isA<WebviewException>()
-            .having((e) => e.code, 'code', 'port_not_wired')),
+        throwsA(
+          isA<WebviewException>().having(
+            (e) => e.code,
+            'code',
+            'port_not_wired',
+          ),
+        ),
       );
       expect(
-        () => const UnwiredWebviewPort()
-            .setCaptureEnabled(id: 'w', enabled: true),
-        throwsA(isA<WebviewException>()
-            .having((e) => e.code, 'code', 'port_not_wired')),
+        () => const UnwiredWebviewPort().setCaptureEnabled(
+          id: 'w',
+          enabled: true,
+        ),
+        throwsA(
+          isA<WebviewException>().having(
+            (e) => e.code,
+            'code',
+            'port_not_wired',
+          ),
+        ),
       );
     });
   });
@@ -109,10 +122,10 @@ void main() {
       controller.add(_entry(url: 'https://x.dev/1'));
       controller.add(_entry(url: 'https://x.dev/2'));
       await Future<void>.delayed(Duration.zero);
-      expect(
-        manager.entries('w').map((e) => e.url),
-        ['https://x.dev/1', 'https://x.dev/2'],
-      );
+      expect(manager.entries('w').map((e) => e.url), [
+        'https://x.dev/1',
+        'https://x.dev/2',
+      ]);
       manager.detach('w');
       controller.add(_entry(url: 'https://x.dev/3'));
       await Future<void>.delayed(Duration.zero);
@@ -159,8 +172,7 @@ void main() {
       expect(e.url, contains('token=abc'));
     });
 
-    test('C5: budgets — maxEntries keeps latest, maxBodyBytes truncates',
-        () {
+    test('C5: budgets — maxEntries keeps latest, maxBodyBytes truncates', () {
       final manager = NetworkCaptureManager(
         budget: const CaptureBudget(maxEntries: 2, maxBodyBytes: 10),
       );
@@ -170,10 +182,10 @@ void main() {
         'w',
         _entry(url: 'https://x.dev/3', responseBody: 'x' * 100),
       );
-      expect(
-        manager.entries('w').map((e) => e.url),
-        ['https://x.dev/2', 'https://x.dev/3'],
-      );
+      expect(manager.entries('w').map((e) => e.url), [
+        'https://x.dev/2',
+        'https://x.dev/3',
+      ]);
       expect(manager.entries('w').last.responseBody, hasLength(10));
     });
 
@@ -220,15 +232,43 @@ void main() {
       final controller = StreamController<WebviewCaptureEntry>();
       final manager = NetworkCaptureManager();
       manager.attach('w', controller.stream);
-      controller.addError(const WebviewException(
-        'channel_not_wired',
-        'no event source',
-        recoverable: false,
-      ));
+      controller.addError(
+        const WebviewException(
+          'channel_not_wired',
+          'no event source',
+          recoverable: false,
+        ),
+      );
       await Future<void>.delayed(Duration.zero);
       expect(manager.error('w'), isA<WebviewException>());
       manager.dispose();
       await controller.close();
+    });
+
+    test('C4: widened redaction carriers are redacted at ingest', () {
+      final manager = NetworkCaptureManager();
+      manager.ingest(
+        'w',
+        _entry(
+          url: 'https://x.dev/p?session_id=abc&signature=def&keep=1',
+          requestHeaders: {
+            'x-api-key': 'k1',
+            'x-csrf-token': 'k2',
+            'x-auth-token': 'k3',
+            'x-amz-security-token': 'k4',
+            'Accept': 'json',
+          },
+        ),
+      );
+      final e = manager.entries('w').single;
+      expect(e.requestHeaders['x-api-key'], '<redacted>');
+      expect(e.requestHeaders['x-csrf-token'], '<redacted>');
+      expect(e.requestHeaders['x-auth-token'], '<redacted>');
+      expect(e.requestHeaders['x-amz-security-token'], '<redacted>');
+      expect(e.requestHeaders['Accept'], 'json');
+      expect(e.url, contains('session_id=<redacted>'));
+      expect(e.url, contains('signature=<redacted>'));
+      expect(e.url, contains('keep=1'));
     });
   });
 }
@@ -267,8 +307,7 @@ class _CaptureFakePort implements WebviewPort {
   Future<Object?> evaluateJavascript({
     required String id,
     required String source,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<String?> getHtml({required String id}) async => null;
@@ -277,8 +316,7 @@ class _CaptureFakePort implements WebviewPort {
   Future<List<int>?> takeScreenshot({
     required String id,
     ScreenshotConfiguration? config,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<List<int>?> exportPdf({required String id}) async => null;
@@ -321,8 +359,7 @@ class _CaptureFakePort implements WebviewPort {
     required String name,
     String? domain,
     String path = '/',
-  }) async =>
-      false;
+  }) async => false;
 
   @override
   Future<void> deleteAllCookies() async {}
