@@ -104,13 +104,11 @@ class WebviewService {
     return port.loadHtml(id: id, html: html, baseUrl: baseUrl);
   }
 
-  /// Navigation events for the webview bound to [id] (spec 004). A missing
-  /// webview fails through the stream (`onError`), as the port contract
-  /// does for stream ops — never as a synchronous throw from the call.
-  Stream<WebviewNavigationEvent> navigationEvents({required String id}) =>
-      _created.contains(id)
-          ? port.navigationEvents(id: id)
-          : Stream.error(_notCreated(id));
+  /// Navigation events for the webview bound to [id] (spec 004).
+  Stream<WebviewNavigationEvent> navigationEvents({required String id}) {
+    _requireCreated(id);
+    return port.navigationEvents(id: id);
+  }
 
   /// Removes fixed/sticky overlays from the loaded page for clean captures
   /// (spec 002). Best-effort by contract: port errors during dismissal are
@@ -154,13 +152,11 @@ class WebviewService {
     return port.setCaptureEnabled(id: id, enabled: enabled, filter: filter);
   }
 
-  /// Intercepted traffic stream for [id] (spec 005). A missing webview
-  /// fails through the stream (`onError`), as the port contract does for
-  /// stream ops.
-  Stream<WebviewCaptureEntry> captureEvents({required String id}) =>
-      _created.contains(id)
-          ? port.captureEvents(id: id)
-          : Stream.error(_notCreated(id));
+  /// Intercepted traffic stream for [id] (spec 005).
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) {
+    _requireCreated(id);
+    return port.captureEvents(id: id);
+  }
 
   // -- Cookies are global (shared store), no id scoping. --
 
@@ -180,15 +176,13 @@ class WebviewService {
 
   Future<void> deleteAllCookies() => port.deleteAllCookies();
 
-  WebviewException _notCreated(String id) => WebviewException(
+  void _requireCreated(String id) {
+    if (!_created.contains(id)) {
+      throw WebviewException(
         'not_created',
         'Webview "$id" is not created — call createHeadless() first.',
         recoverable: false,
       );
-
-  void _requireCreated(String id) {
-    if (!_created.contains(id)) {
-      throw _notCreated(id);
     }
   }
 }

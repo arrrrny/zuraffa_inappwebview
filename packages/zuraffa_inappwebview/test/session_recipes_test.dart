@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:test/test.dart';
 import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
@@ -117,20 +118,20 @@ void main() {
       expect(port.lastLoadedUrl, 'https://x.dev/');
 
       await driver.tap('#buy');
-      expect(port.lastEvaluatedSource,
-          '(document.querySelector("#buy") ?? {click: null}).click()');
+      expect(port.lastEvaluatedSource, contains('querySelector'));
+      expect(port.lastEvaluatedSource, contains('#buy'));
+      expect(port.lastEvaluatedSource, contains('click'));
 
-      // A backslash is significant in real selectors (Tailwind escapes): the
-      // literal must carry it to the browser, not eat it.
-      await driver.tap(r'.sm\:flex');
-      expect(port.lastEvaluatedSource,
-          r'(document.querySelector(".sm\\:flex") ?? {click: null}).click()');
-
-      // A trailing backslash used to escape the closing quote, producing a
-      // JS SyntaxError; the JSON literal keeps the payload parseable.
-      await driver.tap(r'trailing\');
-      expect(port.lastEvaluatedSource,
-          r'(document.querySelector("trailing\\") ?? {click: null}).click()');
+      // The selector must reach the browser as a JS string literal with its
+      // escaping intact, whatever the surrounding wrapper looks like: a
+      // Tailwind-style escape and a trailing backslash both have to survive
+      // (`jsonEncode` is the contract's encoder).
+      for (final selector in [r'.sm\:flex', r'trailing\', r'say "hi"']) {
+        await driver.tap(selector);
+        expect(port.lastEvaluatedSource,
+            contains(jsonEncode(selector)),
+            reason: 'selector $selector lost its escaping on the way out');
+      }
     });
   });
 }

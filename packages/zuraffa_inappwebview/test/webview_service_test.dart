@@ -276,11 +276,11 @@ void main() {
       expect(() => service.exportPdf(id: 'nope'), throwsA(notCreated()));
       expect(() => service.setCaptureEnabled(id: 'nope', enabled: true),
           throwsA(notCreated()));
-      // stream ops report through the stream, never as a synchronous throw
-      await expectLater(
-          service.navigationEvents(id: 'nope'), emitsError(notCreated()));
-      await expectLater(
-          service.captureEvents(id: 'nope'), emitsError(notCreated()));
+      // stream ops guard before subscribing (spec 005 C2b), so an unknown id
+      // is a synchronous throw and the port is never touched
+      expect(() => service.navigationEvents(id: 'nope'),
+          throwsA(notCreated()));
+      expect(() => service.captureEvents(id: 'nope'), throwsA(notCreated()));
 
       expect(port.ops, isEmpty);
     });
