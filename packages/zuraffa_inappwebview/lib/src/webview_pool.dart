@@ -1,3 +1,7 @@
+import 'webview_exception.dart';
+import 'webview_service.dart';
+import 'webview_types.dart';
+
 /// Mission-scoped headless webview pooling (spec 006): each [sessionId]
 /// gets its own webview, sessions on the same registrable domain (eTLD+1
 /// approximation: last two host labels) reuse a warm idle instance, and
@@ -34,12 +38,6 @@ class WebviewPool {
 
   /// The pool's live (non-disposed) instances.
   int get liveCount => _held.length;
-
-  /// Sessions currently holding an instance.
-  List<String> get sessions => <String>[
-        for (final i in _held)
-          if (i.session != null) i.session!,
-      ];
 
   /// Whether [sessionId] currently holds an instance.
   bool hasSession(String sessionId) => _instanceFor(sessionId) != null;
@@ -181,6 +179,12 @@ class WebviewPool {
     }
     return true;
   }
+
+  /// The sessions currently holding an instance (a copy, safe to mutate).
+  Set<String> sessions() => {
+        for (final i in _held)
+          if (i.session != null) i.session!,
+      };
 
   _PooledInstance? _instanceFor(String sessionId) {
     for (final i in _held) {

@@ -116,15 +116,15 @@ void main() {
       driver = WebviewServiceRecipeDriver(service: service, webviewId: 'w');
     });
 
-    test('R7: loadUrl + canonical tap script through the service',
-        () async {
+    test('R7: loadUrl + tap script through the service', () async {
       await driver.loadUrl(Uri.parse('https://x.dev/'));
       expect(port.lastLoadedUrl, 'https://x.dev/');
 
       await driver.tap('#buy');
       expect(
         port.lastEvaluatedSource,
-        'document.querySelector("#buy")?.click()',
+        '(() => { const el = document.querySelector("#buy");'
+            ' if (!el) return false; el.click(); return true; })()',
       );
     });
 
@@ -132,20 +132,22 @@ void main() {
       await driver.tap(r'a\');
       expect(
         port.lastEvaluatedSource,
-        r'document.querySelector("a\\")?.click()',
+        r'(() => { const el = document.querySelector("a\\");'
+            r' if (!el) return false; el.click(); return true; })()',
       );
 
       await driver.tap("\\');alert(1);//");
       expect(
         port.lastEvaluatedSource,
-        r'''document.querySelector("\\');alert(1);//")?.click()''',
+        r'''(() => { const el = document.querySelector("\\');alert(1);//");'''
+            r''' if (!el) return false; el.click(); return true; })()''',
       );
     });
 
     test('R9: a selector that matches nothing is a no-op', () async {
       await driver.tap('#nope');
-      expect(port.lastEvaluatedSource, contains('?.click()'));
-      expect(port.lastEvaluatedSource, isNot(contains('??')));
+      expect(port.lastEvaluatedSource, contains('if (!el) return false'));
+      expect(port.lastEvaluatedSource, isNot(contains('el.click() null')));
       expect(port.lastEvaluatedSource, isNot(contains('click: null')));
     });
   });

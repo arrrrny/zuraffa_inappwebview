@@ -36,6 +36,13 @@ class PoolFakePort implements WebviewPort {
   }
 
   @override
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) async {}
+
+  @override
   Future<void> loadUrl({
     required String id,
     required WebviewUri url,
