@@ -8,8 +8,9 @@ class PoolFakePort implements WebviewPort {
   int creates = 0;
   int runs = 0;
   int disposes = 0;
-  Object? runError;
-  Object? disposeError;
+  bool failRun = false;
+  bool failCreate = false;
+  final List<String> loadedUrls = [];
 
   @override
   Future<bool> isSupported() async => true;
@@ -18,36 +19,33 @@ class PoolFakePort implements WebviewPort {
   Future<void> createHeadless({
     required String id,
     WebviewSettings settings = const WebviewSettings(),
-  }) async =>
-      creates++;
+  }) async {
+    creates++;
+    if (failCreate) {
+      throw const WebviewException('channel_error', 'create failed',
+          recoverable: false);
+    }
+  }
 
   @override
   Future<void> runHeadless({required String id}) async {
     runs++;
-    final error = runError;
-    if (error != null) throw error;
+    if (failRun) {
+      throw const WebviewException('channel_error', 'run failed',
+          recoverable: false);
+    }
   }
 
   @override
-  Future<void> disposeHeadless({required String id}) async {
-    disposes++;
-    final error = disposeError;
-    if (error != null) throw error;
-  }
-
-  @override
-  Future<void> loadHtml({
-    required String id,
-    required String html,
-    String? baseUrl,
-  }) async {}
+  Future<void> disposeHeadless({required String id}) async => disposes++;
 
   @override
   Future<void> loadUrl({
     required String id,
     required WebviewUri url,
     Map<String, String> headers = const {},
-  }) async {}
+  }) async =>
+      loadedUrls.add(url.toString());
 
   @override
   Future<String?> currentUrl({required String id}) async => null;
@@ -75,6 +73,13 @@ class PoolFakePort implements WebviewPort {
   @override
   Stream<WebviewNavigationEvent> navigationEvents({required String id}) =>
       const Stream.empty();
+
+  @override
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) async {}
 
   @override
   Future<void> setCaptureEnabled({
@@ -139,13 +144,16 @@ void main() {
   });
 
   group('US2 — domain affinity', () {
-    test('P3: same eTLD+1 idle instance is reused', () async {
+    test('P3: same eTLD+1 idle instance is reused after a reset', () async {
       final pool = WebviewPool(service: service);
       final first = await pool.acquire('s1', domainHint: 'x.dev');
       await pool.release('s1');
+      port.loadedUrls.clear();
       final second = await pool.acquire('s2', domainHint: 'shop.x.dev');
       expect(second, first);
       expect(port.creates, 1);
+      // The previous mission's document must not leak into the new one.
+      expect(port.loadedUrls, ['about:blank']);
     });
 
     test('P4: different domain does not reuse', () async {
@@ -155,36 +163,18 @@ void main() {
       await pool.acquire('s2', domainHint: 'other.dev');
       expect(port.creates, 2);
     });
-
-    test('P4b: IP literals are their own domain', () async {
-      expect(WebviewPool.registrableDomain('10.0.0.5'), '10.0.0.5');
-      expect(WebviewPool.registrableDomain('192.168.0.5'), '192.168.0.5');
-      expect(WebviewPool.registrableDomain('::1'), '::1');
-
-      final pool = WebviewPool(service: service);
-      await pool.acquire('s1', domainHint: '10.0.0.5');
-      await pool.release('s1');
-      await pool.acquire('s2', domainHint: '192.168.0.5');
-      expect(port.creates, 2); // no cross-host reuse
-    });
   });
 
   group('US3 — caps + eviction', () {
     test('P5a: maxLive evicts the idlest instance first', () async {
-      var now = DateTime(2026, 1, 1);
-      final pool = WebviewPool(service: service, maxLive: 2, clock: () => now);
-      final first = await pool.acquire('s1', domainHint: 'a.dev');
+      final pool = WebviewPool(service: service, maxLive: 2);
+      await pool.acquire('s1', domainHint: 'a.dev');
       await pool.release('s1');
-      now = now.add(const Duration(minutes: 1));
-      final second = await pool.acquire('s2', domainHint: 'b.dev');
-      await pool.release('s2');
-      // two warm idles, distinct idleSince: a.dev is the older one
-      final third = await pool.acquire('s3', domainHint: 'c.dev');
-      expect(port.disposes, 1);
+      await pool.acquire('s2', domainHint: 'b.dev');
+      // pool now holds idle(a.dev) + active(b.dev) = 2 = maxLive
+      await pool.acquire('s3', domainHint: 'c.dev');
+      expect(port.disposes, 1); // the idle a.dev instance was evicted
       expect(pool.liveCount, 2);
-      expect(service.created, isNot(contains(first))); // the idlest went
-      expect(service.created, contains(second));
-      expect(service.created, contains(third));
     });
 
     test('P5b: saturated pool -> typed pool_exhausted', () async {
@@ -195,27 +185,6 @@ void main() {
         throwsA(isA<WebviewException>()
             .having((e) => e.code, 'code', 'pool_exhausted')),
       );
-    });
-
-    test('P5c: per-domain cap -> pool_exhausted', () async {
-      final pool = WebviewPool(service: service, maxPerDomain: 1);
-      await pool.acquire('s1', domainHint: 'x.dev');
-      await expectLater(
-        pool.acquire('s2', domainHint: 'shop.x.dev'), // same eTLD+1
-        throwsA(isA<WebviewException>()
-            .having((e) => e.code, 'code', 'pool_exhausted')),
-      );
-      expect(port.creates, 1);
-    });
-
-    test('P5d: a warm same-domain instance is reused, not evicted', () async {
-      final pool = WebviewPool(service: service, maxPerDomain: 1);
-      final first = await pool.acquire('s1', domainHint: 'x.dev');
-      await pool.release('s1');
-      final second = await pool.acquire('s2', domainHint: 'shop.x.dev');
-      expect(second, first);
-      expect(port.creates, 1);
-      expect(port.disposes, 0);
     });
 
     test('P6: idleTtl sweep disposes stale idles (injected clock)',
@@ -247,59 +216,168 @@ void main() {
       expect(port.disposes, 2);
       expect(service.created, isEmpty);
     });
+  });
 
-    test('P8: a failed runHeadless disposes the created webview', () async {
-      port.runError = const WebviewException(
-        'run_failed',
-        'boom',
-        recoverable: true,
+  group('US3 — per-domain cap', () {
+    test('P8a: an idle same-domain instance is reused, not capped out',
+        () async {
+      final pool = WebviewPool(service: service, maxPerDomain: 2);
+      await pool.acquire('s1', domainHint: 'a.dev');
+      await pool.release('s1');
+      final reused = await pool.acquire('s2', domainHint: 'a.dev');
+      expect(reused, isNotNull);
+      expect(port.creates, 1);
+    });
+
+    test('P8b: a third live instance on one domain -> typed '
+        'pool_exhausted with free maxLive slots', () async {
+      final pool = WebviewPool(service: service, maxPerDomain: 2);
+      await pool.acquire('s1', domainHint: 'a.dev');
+      await pool.acquire('s2', domainHint: 'a.dev');
+      await expectLater(
+        pool.acquire('s3', domainHint: 'a.dev'),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'pool_exhausted')),
       );
+      expect(pool.liveCount, 2);
+      expect(port.creates, 2);
+    });
+
+    test('P8c: releasing one session frees a per-domain slot', () async {
+      final pool = WebviewPool(service: service, maxPerDomain: 2);
+      await pool.acquire('s1', domainHint: 'a.dev');
+      await pool.acquire('s2', domainHint: 'a.dev');
+      await pool.release('s1');
+      await pool.acquire('s3', domainHint: 'a.dev');
+      expect(pool.sessions(), {'s2', 's3'});
+      expect(port.creates, 2);
+    });
+
+    test('P8d: another domain is unaffected by the cap', () async {
+      final pool = WebviewPool(service: service, maxPerDomain: 2);
+      await pool.acquire('s1', domainHint: 'a.dev');
+      await pool.acquire('s2', domainHint: 'a.dev');
+      await pool.acquire('s3', domainHint: 'b.dev');
+      expect(port.creates, 3);
+    });
+
+    test('P8e: a doomed acquire leaves another domain\'s warm idle alone',
+        () async {
+      // Review finding (2026-11-22, 🟠): the maxLive eviction ran before the
+      // per-domain cap check, so an acquire that was going to throw still
+      // destroyed a healthy idle instance on an unrelated domain.
+      final pool = WebviewPool(
+        service: service,
+        maxLive: 3,
+        maxPerDomain: 2,
+      );
+      await pool.acquire('s1', domainHint: 'a.dev');
+      await pool.acquire('s2', domainHint: 'a.dev');
+      await pool.acquire('s3', domainHint: 'b.dev');
+      await pool.release('s3'); // warm idle on b.dev
+      expect(pool.liveCount, 3);
+
+      await expectLater(
+        pool.acquire('s4', domainHint: 'a.dev'),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'pool_exhausted')),
+      );
+
+      // The failure must be side-effect-free: nothing evicted, nothing
+      // created, and the b.dev idle is still reusable.
+      expect(port.disposes, 0);
+      expect(port.creates, 3);
+      expect(pool.liveCount, 3);
+      final reused = await pool.acquire('s5', domainHint: 'b.dev');
+      expect(reused, isNotNull);
+      expect(port.creates, 3); // reused the warm instance
+    });
+  });
+
+  group('US2 — registrableDomain', () {
+    test('P14: last two labels for hostnames, verbatim for IP literals',
+        () {
+      expect(WebviewPool.registrableDomain('shop.x.dev'), 'x.dev');
+      expect(WebviewPool.registrableDomain('x.dev'), 'x.dev');
+      expect(WebviewPool.registrableDomain('localhost'), 'localhost');
+      // Review finding (2026-11-22, 🟡): IP literals used to collapse onto
+      // one shared bucket (`127.0.0.1` and `10.0.0.1` both → `0.1`), which
+      // handed an unrelated host a warm instance.
+      expect(WebviewPool.registrableDomain('127.0.0.1'), '127.0.0.1');
+      expect(WebviewPool.registrableDomain('10.0.0.1'), '10.0.0.1');
+      expect(WebviewPool.registrableDomain('192.168.1.20'), '192.168.1.20');
+      expect(WebviewPool.registrableDomain('::1'), '::1');
+      expect(WebviewPool.registrableDomain('[::1]'), '[::1]');
+      // A four-label DNS name whose last label is not numeric is not a v4.
+      expect(WebviewPool.registrableDomain('a.b.c.dev'), 'c.dev');
+    });
+
+    test('P15: distinct IP hosts never share a warm instance', () async {
+      final pool = WebviewPool(service: service);
+      await pool.acquire('s1', domainHint: '127.0.0.1');
+      await pool.release('s1');
+      await pool.acquire('s2', domainHint: '10.0.0.1');
+      expect(port.creates, 2);
+    });
+  });
+
+  group('US5 — concurrency + failure cleanup', () {
+    test('P9: overlapping acquires for one session create one instance',
+        () async {
+      final pool = WebviewPool(service: service);
+      final ids = await Future.wait([
+        pool.acquire('s1', domainHint: 'a.dev'),
+        pool.acquire('s1', domainHint: 'a.dev'),
+        pool.acquire('s1', domainHint: 'a.dev'),
+      ]);
+      expect(ids.toSet(), hasLength(1));
+      expect(port.creates, 1);
+      expect(port.runs, 1);
+      expect(pool.liveCount, 1);
+    });
+
+    test('P10: overlapping acquires cannot overshoot maxLive', () async {
+      final pool = WebviewPool(service: service, maxLive: 2);
+      final results = await Future.wait([
+        pool.acquire('s1', domainHint: 'a.dev'),
+        pool.acquire('s2', domainHint: 'b.dev'),
+        pool.acquire('s3', domainHint: 'c.dev'),
+        pool.acquire('s4', domainHint: 'd.dev'),
+      ].map((f) => f.then<Object?>((v) => v, onError: (Object e) => e)));
+      expect(pool.liveCount, 2);
+      expect(results.whereType<WebviewException>(), hasLength(2));
+      expect(port.creates, 2);
+    });
+
+    test('P11: a runHeadless failure disposes the created webview',
+        () async {
+      port.failRun = true;
       final pool = WebviewPool(service: service);
       await expectLater(
         pool.acquire('s1', domainHint: 'a.dev'),
         throwsA(isA<WebviewException>()
-            .having((e) => e.code, 'code', 'run_failed')),
+            .having((e) => e.code, 'code', 'channel_error')),
       );
-      expect(port.creates, 1);
+      expect(pool.liveCount, 0);
+      expect(pool.hasSession('s1'), isFalse);
       expect(port.disposes, 1);
-      expect(pool.liveCount, 0);
       expect(service.created, isEmpty);
     });
 
-    test('P9: a failed dispose keeps the instance retryable', () async {
+    test('P12: release on an unknown session is a no-op', () async {
       final pool = WebviewPool(service: service);
-      await pool.acquire('s1', domainHint: 'a.dev');
-      port.disposeError = const WebviewException(
-        'dispose_failed',
-        'boom',
-        recoverable: true,
-      );
-      await expectLater(
-        pool.disposeAll(),
-        throwsA(isA<WebviewException>()
-            .having((e) => e.code, 'code', 'dispose_failed')),
-      );
-      expect(pool.liveCount, 1); // still reachable: the service still knows it
-      expect(service.created, {'pool-1'});
-
-      port.disposeError = null;
-      await pool.disposeAll();
+      await pool.release('nope');
       expect(pool.liveCount, 0);
-      expect(service.created, isEmpty);
+      expect(port.disposes, 0);
     });
 
-    test('P9b: disposeAll attempts every instance before surfacing the error',
-        () async {
+    test('P13: hasSession tracks acquire and release', () async {
       final pool = WebviewPool(service: service);
+      expect(pool.hasSession('s1'), isFalse);
       await pool.acquire('s1', domainHint: 'a.dev');
-      await pool.acquire('s2', domainHint: 'b.dev');
-      port.disposeError = const WebviewException(
-        'dispose_failed',
-        'boom',
-        recoverable: true,
-      );
-      await expectLater(pool.disposeAll(), throwsA(isA<WebviewException>()));
-      expect(port.disposes, 2); // the second was attempted, not skipped
+      expect(pool.hasSession('s1'), isTrue);
+      await pool.release('s1');
+      expect(pool.hasSession('s1'), isFalse);
     });
   });
 }

@@ -2,19 +2,22 @@ import 'webview_exception.dart';
 import 'webview_service.dart';
 import 'webview_types.dart';
 
-/// Mission-scoped headless webview pooling (spec 006): each [sessionId]
-/// gets its own webview, sessions on the same registrable domain (eTLD+1
-/// approximation: last two host labels) reuse a warm idle instance, and
-/// caps (`maxLive`, `maxPerDomain`) plus an idle TTL keep the process
-/// memory-safe. Single-label hosts and IP literals map to themselves.
-/// Multi-part TLDs (co.uk) are a documented follow-up.
+/// Mission-scoped webview sessions over [WebviewService] (spec 006).
 ///
-/// A reused instance is navigated to `about:blank` first, so it never
-/// carries the previous mission's document or JS state. `acquire` is
-/// serialised on an internal gate: the caps and the session→instance
-/// mapping are checked and mutated with no interleaving `await` in
-/// between, so concurrent acquires can neither double-create an instance
-/// for one session nor overshoot [maxLive].
+/// Agent tool sequences are stateful (browse → intercept → execute JS →
+/// cookies); keying instances by session handle — not URL — keeps state
+/// consistent per mission and stops parallel missions from leaking
+/// webviews. Released instances stay warm (idle) and are reused by the
+/// next session on the same registrable domain (eTLD+1 approximation:
+/// last two host labels); a reused instance is navigated to `about:blank`
+/// first so it never carries the previous mission's document or JS state.
+/// Caps and TTL keep the pool memory-safe; expiry is swept lazily on
+/// acquire (no Flutter lifecycle dependency).
+///
+/// [acquire] is serialised on an internal gate: the pool caps and the
+/// session→instance mapping are checked and mutated with no interleaving
+/// `await` in between, so concurrent acquires can neither double-create an
+/// instance for one session nor overshoot [maxLive].
 class WebviewPool {
   final WebviewService service;
   final WebviewSettings settings;
@@ -30,22 +33,32 @@ class WebviewPool {
   WebviewPool({
     required this.service,
     this.settings = const WebviewSettings(),
-    this.maxLive = 3,
-    this.maxPerDomain = 1,
-    this.idleTtl = const Duration(minutes: 5),
+    this.maxLive = 8,
+    this.maxPerDomain = 2,
+    this.idleTtl = const Duration(minutes: 2),
     DateTime Function()? clock,
   }) : clock = clock ?? DateTime.now;
 
-  /// The pool's live (non-disposed) instances.
+  /// Number of instances currently held (active sessions + warm idles).
   int get liveCount => _held.length;
 
-  /// Whether [sessionId] currently holds an instance.
+  /// The active session ids.
+  Set<String> sessions() => {
+        for (final i in _held)
+          if (i.session != null) i.session!,
+      };
+
+  /// Whether [sessionId] currently holds an instance. Tools use this to
+  /// reject an unknown (typo'd or already-released) session with a typed
+  /// failure instead of silently acquiring a blank instance for it.
   bool hasSession(String sessionId) => _instanceFor(sessionId) != null;
 
   /// Returns the webview id for [sessionId], creating+running a fresh
   /// headless instance on first acquire. Same session always maps to the
   /// same instance; a warm idle instance on the same registrable domain
   /// (from [domainHint]) is reused across sessions.
+  ///
+  /// Concurrent calls are serialised — see the class doc.
   Future<String> acquire(String sessionId, {String? domainHint}) {
     final result = _gate.then((_) => _acquireNow(sessionId, domainHint));
     _gate = result.then<void>((_) {}, onError: (Object _) {});
@@ -112,9 +125,7 @@ class WebviewPool {
     try {
       await service.runHeadless(id: id);
     } on Object {
-      // The service has already registered the webview, so a failed run
-      // must be disposed here or nothing can ever reach it again.
-      await service.disposeHeadless(id: id);
+      await _disposeUnstarted(id);
       rethrow;
     }
     _held.add(_PooledInstance(
@@ -135,19 +146,11 @@ class WebviewPool {
     inst.idleSince = clock();
   }
 
-  /// Disposes every held instance (active and idle). Every instance is
-  /// attempted before the first failure is surfaced, so one broken
-  /// dispose cannot leave the rest warm.
+  /// Disposes every held instance (active and idle).
   Future<void> disposeAll() async {
-    Object? firstError;
     for (final inst in List.of(_held)) {
-      try {
-        await _dispose(inst);
-      } catch (e) {
-        firstError ??= e;
-      }
+      await _dispose(inst);
     }
-    if (firstError != null) throw firstError;
   }
 
   /// eTLD+1 approximation: the last two host labels (`shop.x.dev` →
@@ -180,12 +183,6 @@ class WebviewPool {
     return true;
   }
 
-  /// The sessions currently holding an instance (a copy, safe to mutate).
-  Set<String> sessions() => {
-        for (final i in _held)
-          if (i.session != null) i.session!,
-      };
-
   _PooledInstance? _instanceFor(String sessionId) {
     for (final i in _held) {
       if (i.session == sessionId) return i;
@@ -193,35 +190,41 @@ class WebviewPool {
     return null;
   }
 
-  Future<void> _sweepExpired() async {
-    final cutoff = clock().subtract(idleTtl);
-    final expired = _held
-        .where((i) => i.session == null && i.idleSince.isBefore(cutoff))
-        .toList(growable: false);
-    for (final inst in expired) {
-      try {
-        await _dispose(inst);
-      } on Object {
-        // A failed sweep dispose must not abort the acquire; the instance
-        // stays held and is retried on the next sweep.
+  _PooledInstance? _idlest(Iterable<_PooledInstance> candidates) {
+    _PooledInstance? idlest;
+    for (final i in candidates) {
+      if (idlest == null || i.idleSince.isBefore(idlest.idleSince)) {
+        idlest = i;
       }
+    }
+    return idlest;
+  }
+
+  Future<void> _sweepExpired() async {
+    final now = clock();
+    final expired = _held
+        .where((i) =>
+            i.session == null &&
+            now.difference(i.idleSince) > idleTtl)
+        .toList();
+    for (final i in expired) {
+      await _dispose(i);
     }
   }
 
-  _PooledInstance? _idlest(Iterable<_PooledInstance> candidates) {
-    _PooledInstance? best;
-    for (final c in candidates) {
-      if (best == null || c.idleSince.isBefore(best.idleSince)) best = c;
+  /// Disposes a created-but-never-registered instance, swallowing a
+  /// secondary disposal failure so the original one still propagates.
+  Future<void> _disposeUnstarted(String webviewId) async {
+    try {
+      await service.disposeHeadless(id: webviewId);
+    } on Object {
+      // The failure that stopped the acquire is the one worth reporting.
     }
-    return best;
   }
 
   Future<void> _dispose(_PooledInstance inst) async {
-    // Forget the instance only once the port has released it: a failed
-    // dispose leaves the webview registered with the service, so keeping
-    // it here is what makes a retry reachable.
-    await service.disposeHeadless(id: inst.webviewId);
     _held.remove(inst);
+    await service.disposeHeadless(id: inst.webviewId);
   }
 }
 
