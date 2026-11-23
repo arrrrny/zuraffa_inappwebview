@@ -105,7 +105,7 @@ implement; pinning it keeps the three adapters honest.
 
 | Entity | Kind | Channel shape |
 |---|---|---|
-| `ScreenshotFormat` | enum | `'png' | 'jpeg'` |
+| `ScreenshotFormat` | enum | `'png'`/`'jpeg'` |
 | `ScreenshotConfiguration` | value object | `{'format': String, 'quality': int}` |
 | port ops | interface | methods `takeScreenshot`/`exportPdf`, response key `data: List<int>?` |
 

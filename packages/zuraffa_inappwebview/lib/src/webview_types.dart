@@ -66,7 +66,8 @@ class WebviewSettings {
   final Duration loadTimeout;
 
   /// Hides fixed/sticky overlays (dialogue banners) after load for clean
-  /// captures — off by default; the native side may also honor it (spec 002).
+  /// captures (spec 002). Off by default. Apply via
+  /// `WebviewService.dismissDialogues`; native auto-apply is a follow-up.
   final bool dismissDialogues;
 
   const WebviewSettings({
@@ -96,8 +97,8 @@ class WebviewSettings {
 enum ScreenshotFormat { png, jpeg }
 
 /// Capture configuration for `takeScreenshot` (spec 003): format and JPEG
-/// quality (1–100, only meaningful for jpeg). [quality] is clamped to that
-/// range on construction. Rect capture is a follow-up.
+/// quality (1–100, clamped on construction; only meaningful for jpeg). Rect
+/// capture is a follow-up.
 class ScreenshotConfiguration {
   final ScreenshotFormat format;
   final int quality;

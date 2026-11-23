@@ -88,7 +88,7 @@ class WebviewService {
   Future<List<int>?> takeScreenshot({
     required String id,
     ScreenshotConfiguration? config,
-  }) {
+  }) async {
     _requireCreated(id);
     return port.takeScreenshot(id: id, config: config);
   }
@@ -98,7 +98,7 @@ class WebviewService {
   /// Same `created`-not-`running` gate as [takeScreenshot]: export of a
   /// never-run webview is platform-defined. Run it first for the rendered
   /// document.
-  Future<List<int>?> exportPdf({required String id}) {
+  Future<List<int>?> exportPdf({required String id}) async {
     _requireCreated(id);
     return port.exportPdf(id: id);
   }
