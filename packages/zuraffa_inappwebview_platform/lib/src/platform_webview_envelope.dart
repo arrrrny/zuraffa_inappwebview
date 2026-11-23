@@ -24,6 +24,10 @@ typedef PlatformErrorMapper = Exception? Function(String code, String message);
 /// [PlatformWebviewEnvelope.call] without double wrapping.
 typedef TypedErrorPredicate = bool Function(Object error);
 
+/// The injected event seam (spec 004): the consuming app (or native shell)
+/// supplies a stream of raw platform-pushed payloads per event method.
+typedef ChannelEventSource = Stream<Object?> Function(String method);
+
 /// Sentinel for the envelope's own timeout: thrown by the `onTimeout`
 /// callback and converted to the adapter's typed `timeout` failure — never
 /// observable outside [call].
