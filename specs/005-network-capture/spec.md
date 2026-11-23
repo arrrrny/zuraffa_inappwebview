@@ -43,7 +43,8 @@ invoke maps.
    port receives it, **Then** the adapter ships method `setCaptureEnabled`
    with `id`, `enabled`, and the filter's serialized args.
 3. **Given** an unknown id, **When** either op is called, **Then**
-   `not_created` throws (stream op throws before subscribing).
+   `not_created` surfaces (the future rejects; `captureEvents` reports on
+   the stream, never as a synchronous throw).
 4. **Given** the unwired port, **When** either op is called, **Then**
    `port_not_wired` surfaces.
 

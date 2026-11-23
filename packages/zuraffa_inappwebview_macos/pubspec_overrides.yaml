@@ -1,0 +1,9 @@
+# Committed so a clean checkout resolves the monorepo siblings locally.
+# pub never publishes this file (it is stripped from the archive), so the
+# published adapter keeps its hosted ^constraints; see PUBLISH.md.
+dependency_overrides:
+  zuraffa_inappwebview:
+    path: ../zuraffa_inappwebview
+  zuraffa_inappwebview_platform:
+    path: ../zuraffa_inappwebview_platform
+  xml: 7.1.0
