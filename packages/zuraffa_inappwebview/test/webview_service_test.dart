@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:test/test.dart';
 import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
 
 /// Recording fake port: records operations, replays scripted results.
 class FakeWebviewPort implements WebviewPort {
   final List<String> ops = [];
+  final List<(String, String)> evaluated = [];
   String? currentUrlResult;
   Object? evaluateResult;
   String? htmlResult;
@@ -41,8 +44,10 @@ class FakeWebviewPort implements WebviewPort {
   Future<Object?> evaluateJavascript({
     required String id,
     required String source,
-  }) async =>
-      evaluateResult;
+  }) async {
+    evaluated.add((id, source));
+    return evaluateResult;
+  }
 
   @override
   Future<String?> getHtml({required String id}) async => htmlResult;
@@ -57,6 +62,27 @@ class FakeWebviewPort implements WebviewPort {
   @override
   Future<List<int>?> exportPdf({required String id}) async => null;
 
+  @override
+  Stream<WebviewNavigationEvent> navigationEvents({required String id}) =>
+      const Stream.empty();
+
+  @override
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) async {}
+
+  @override
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) async {}
+
+  @override
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) =>
+      const Stream.empty();
   @override
   Future<void> setCookie(WebviewCookie cookie) async =>
       storedCookies.add(cookie);
@@ -168,6 +194,8 @@ void main() {
       expect(await service.currentUrl(id: 'w'), 'https://x.dev/page');
       expect(await service.evaluateJavascript(id: 'w', source: '1+1'), 42);
       expect(await service.getHtml(id: 'w'), '<html></html>');
+      // id and source reach the port unswapped
+      expect(port.evaluated.single, ('w', '1+1'));
     });
 
     test('W8: cookies route to the shared store (no id scoping)', () async {
@@ -233,6 +261,28 @@ void main() {
       expect(back.path, '/p');
       expect(back.expiresAt, expires);
       expect(back.secure, isTrue);
+    });
+  });
+
+  group('widened ops (W12)', () {
+    test('W12: unknown id -> typed not_created, no platform call', () async {
+      Matcher notCreated() => isA<WebviewException>()
+          .having((e) => e.code, 'code', 'not_created');
+
+      // the guard fires whether the op fails synchronously or on the future
+      expect(() => service.loadHtml(id: 'nope', html: '<html/>'),
+          throwsA(notCreated()));
+      expect(() => service.takeScreenshot(id: 'nope'), throwsA(notCreated()));
+      expect(() => service.exportPdf(id: 'nope'), throwsA(notCreated()));
+      expect(() => service.setCaptureEnabled(id: 'nope', enabled: true),
+          throwsA(notCreated()));
+      // stream ops guard before subscribing (spec 005 C2b), so an unknown id
+      // is a synchronous throw and the port is never touched
+      expect(() => service.navigationEvents(id: 'nope'),
+          throwsA(notCreated()));
+      expect(() => service.captureEvents(id: 'nope'), throwsA(notCreated()));
+
+      expect(port.ops, isEmpty);
     });
   });
 }

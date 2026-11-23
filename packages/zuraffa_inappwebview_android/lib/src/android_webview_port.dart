@@ -106,6 +106,10 @@ class AndroidWebviewPort implements WebviewPort {
     return _decodeBytes(result?['data']);
   }
 
+  /// Decodes a byte payload, keeping every rejection inside the typed
+  /// taxonomy: a non-list, a non-integer element (JSON `1.5`, a base64
+  /// chunk, a null from a half-implemented native shell) is a
+  /// `malformed_response`, never a raw `TypeError`.
   List<int>? _decodeBytes(Object? raw) {
     if (raw == null) return null;
     if (raw is! List) {
@@ -115,17 +119,129 @@ class AndroidWebviewPort implements WebviewPort {
         recoverable: false,
       );
     }
-    return [
-      for (final b in raw)
-        if (b is int)
-          b
-        else
-          throw const AndroidWebviewException(
-            'malformed_response',
-            'The capture data list carried a non-int byte.',
-            recoverable: false,
-          ),
-    ];
+    final bytes = <int>[];
+    for (final value in raw) {
+      if (value is! int) {
+        throw const AndroidWebviewException(
+          'malformed_response',
+          'The capture result carried a non-integer byte value.',
+          recoverable: false,
+        );
+      }
+      bytes.add(value);
+    }
+    return bytes;
+  }
+
+  @override
+  Stream<WebviewNavigationEvent> navigationEvents({required String id}) {
+    final source = channel.eventSource;
+    if (source == null) {
+      return Stream.error(const AndroidWebviewException(
+        'channel_not_wired',
+        'No event source was injected — pass one to the channel to '
+        'subscribe to navigation events.',
+        recoverable: false,
+      ));
+    }
+    // A non-map payload carries no id, so it cannot be attributed: that is
+    // the typed `malformed_response` (FR-4). Map payloads are filtered by id
+    // *before* their keys are decoded, so a payload bound for another
+    // webview can never error this subscription's stream.
+    return source('navigationEvents')
+        .map(_requirePayload)
+        .where((payload) => payload['id'] == id)
+        // A null here means the phase wasn't recognized: the event is
+        // skipped rather than coerced to `started`.
+        .map(_decodeNavigationEvent)
+        .where((event) => event != null)
+        .cast<WebviewNavigationEvent>();
+  }
+
+  Map<Object?, Object?> _requirePayload(Object? raw) {
+    if (raw is! Map) {
+      throw const AndroidWebviewException(
+        'malformed_response',
+        'A navigation event carried a non-map payload.',
+        recoverable: false,
+      );
+    }
+    return raw;
+  }
+
+  WebviewNavigationEvent? _decodeNavigationEvent(
+    Map<Object?, Object?> payload,
+  ) {
+    final Map<String, Object?> args;
+    try {
+      args = Map<String, Object?>.from(payload);
+    } on TypeError {
+      throw const AndroidWebviewException(
+        'malformed_response',
+        'A navigation event carried unusable keys.',
+        recoverable: false,
+      );
+    }
+    try {
+      return WebviewNavigationEvent.fromChannelArgs(args);
+    } on WebviewException catch (failure) {
+      throw AndroidWebviewException(
+        failure.code,
+        failure.message,
+        recoverable: false,
+      );
+    }
+  }
+
+  @override
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) async {
+    await channel.call('loadHtml', {
+      'id': id,
+      'html': html,
+      if (baseUrl != null) 'baseUrl': baseUrl,
+    });
+  }
+
+  @override
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) async {
+    await channel.call('setCaptureEnabled', {
+      'id': id,
+      'enabled': enabled,
+      if (filter != null) ...filter.toChannelArgs(),
+    });
+  }
+
+  @override
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) {
+    final source = channel.eventSource;
+    if (source == null) {
+      return Stream.error(const AndroidWebviewException(
+        'channel_not_wired',
+        'No event source was injected — pass one to the channel to '
+        'subscribe to capture events.',
+        recoverable: false,
+      ));
+    }
+    return source('captureEvents').asyncMap((raw) {
+      if (raw is! Map) {
+        throw const AndroidWebviewException(
+          'malformed_response',
+          'A capture event carried a non-map payload.',
+          recoverable: false,
+        );
+      }
+      return Map<String, Object?>.from(raw);
+    }).where((map) => map['id'] == id).map(
+          WebviewCaptureEntry.fromChannelArgs,
+        );
   }
 
   @override
@@ -145,10 +261,27 @@ class AndroidWebviewPort implements WebviewPort {
         recoverable: false,
       );
     }
-    return [
-      for (final entry in raw)
-        WebviewCookie.fromChannelArgs(Map<String, Object?>.from(entry as Map)),
-    ];
+    final cookies = <WebviewCookie>[];
+    for (final entry in raw) {
+      if (entry is! Map) {
+        throw const AndroidWebviewException(
+          'malformed_response',
+          'The getCookies result carried a non-map cookie entry.',
+          recoverable: false,
+        );
+      }
+      try {
+        cookies.add(WebviewCookie.fromChannelArgs(
+            Map<String, Object?>.from(entry)));
+      } on Object catch (error) {
+        throw AndroidWebviewException(
+          'malformed_response',
+          'A cookie entry could not be decoded: $error',
+          recoverable: false,
+        );
+      }
+    }
+    return cookies;
   }
 
   @override

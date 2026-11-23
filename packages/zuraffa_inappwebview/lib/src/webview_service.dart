@@ -1,4 +1,6 @@
 import 'dialogue_dismiss.dart';
+import 'navigation_tracking.dart';
+import 'network_capture.dart';
 import 'webview_exception.dart';
 import 'webview_port.dart';
 import 'webview_types.dart';
@@ -78,23 +80,48 @@ class WebviewService {
 
   /// Captures the rendered page as image bytes; null when the platform
   /// could not capture (spec 003).
+  ///
+  /// Gated on `created`, not `running` (FR-1): capture is legal on a
+  /// webview that was created but never `runHeadless`-ed. What that yields
+  /// is platform-defined — a blank page on some platforms — so a caller
+  /// that wants the rendered document must run the webview first.
   Future<List<int>?> takeScreenshot({
     required String id,
     ScreenshotConfiguration? config,
-  }) {
+  }) async {
     _requireCreated(id);
     return port.takeScreenshot(id: id, config: config);
   }
 
   /// Exports the rendered page as PDF bytes; null on failure (spec 003).
-  Future<List<int>?> exportPdf({required String id}) {
+  ///
+  /// Same `created`-not-`running` gate as [takeScreenshot]: export of a
+  /// never-run webview is platform-defined. Run it first for the rendered
+  /// document.
+  Future<List<int>?> exportPdf({required String id}) async {
     _requireCreated(id);
     return port.exportPdf(id: id);
   }
 
-  /// Removes fixed/sticky overlays from the loaded page for clean captures
-  /// (spec 002). Best-effort by contract: port errors during dismissal are
-  /// swallowed and never break the caller's flow.
+  /// Renders [html] directly with an optional [baseUrl] (spec 008).
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) {
+    _requireCreated(id);
+    return port.loadHtml(id: id, html: html, baseUrl: baseUrl);
+  }
+
+  /// Navigation events for the webview bound to [id] (spec 004).
+  Stream<WebviewNavigationEvent> navigationEvents({required String id}) {
+    _requireCreated(id);
+    return port.navigationEvents(id: id);
+  }
+
+  /// Hides fixed/sticky overlays from the loaded page for clean captures
+  /// (spec 002). Best-effort by contract: anything the port raises during
+  /// dismissal is swallowed and never breaks the caller's flow.
   Future<void> dismissDialogues({
     required String id,
     DialogueDismissPolicy policy = const DialogueDismissPolicy(),
@@ -109,9 +136,10 @@ class WebviewService {
           id: id,
           source: DialogueDismissScript.source,
         );
-      } on Object {
-        // FR-5: dismissal is best-effort — ANY port failure (Exception or
-        // Error) must not propagate to the caller.
+      } catch (_) {
+        // FR-5: dismissal is best-effort — neither an `Exception` nor an
+        // `Error` (a `TypeError` out of an adapter decode path, a
+        // `StateError`) may propagate.
       }
     }
   }
@@ -121,6 +149,22 @@ class WebviewService {
     await port.disposeHeadless(id: id);
     _created.remove(id);
     _running.remove(id);
+  }
+
+  /// Enables/disables network capture for [id] (spec 005).
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) {
+    _requireCreated(id);
+    return port.setCaptureEnabled(id: id, enabled: enabled, filter: filter);
+  }
+
+  /// Intercepted traffic stream for [id] (spec 005).
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) {
+    _requireCreated(id);
+    return port.captureEvents(id: id);
   }
 
   // -- Cookies are global (shared store), no id scoping. --
@@ -211,6 +255,34 @@ class UnwiredWebviewPort implements WebviewPort {
 
   @override
   Future<List<int>?> exportPdf({required String id}) => _unwired();
+
+  /// One deliberate asymmetry with the adapters: those surface
+  /// `channel_not_wired` as a `Stream.error`, this placeholder throws
+  /// synchronously — the service's `_requireCreated` style, so an unwired
+  /// port fails fast at the call site instead of on `listen`.
+  @override
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) =>
+      _unwired();
+
+  @override
+  Stream<WebviewNavigationEvent> navigationEvents({required String id}) =>
+      _unwired();
+
+  @override
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) =>
+      _unwired();
+
+  @override
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) =>
+      _unwired();
 
   @override
   Future<void> setCookie(WebviewCookie cookie) => _unwired();

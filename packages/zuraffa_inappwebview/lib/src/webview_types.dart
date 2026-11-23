@@ -65,9 +65,9 @@ class WebviewSettings {
   final bool supportZoom;
   final Duration loadTimeout;
 
-  /// Opt-in flag for clean captures; apply via
-  /// `WebviewService.dismissDialogues` — native auto-apply is a follow-up
-  /// (spec 002). Off by default.
+  /// Hides fixed/sticky overlays (dialogue banners) after load for clean
+  /// captures (spec 002). Off by default. Apply via
+  /// `WebviewService.dismissDialogues`; native auto-apply is a follow-up.
   final bool dismissDialogues;
 
   const WebviewSettings({
@@ -97,16 +97,16 @@ class WebviewSettings {
 enum ScreenshotFormat { png, jpeg }
 
 /// Capture configuration for `takeScreenshot` (spec 003): format and JPEG
-/// quality (0–100, asserted; only meaningful for jpeg). Rect capture is a
-/// follow-up.
+/// quality (1–100, clamped on construction; only meaningful for jpeg). Rect
+/// capture is a follow-up.
 class ScreenshotConfiguration {
   final ScreenshotFormat format;
   final int quality;
 
   const ScreenshotConfiguration({
     this.format = ScreenshotFormat.png,
-    this.quality = 100,
-  }) : assert(quality >= 0 && quality <= 100, 'quality must be 0-100');
+    int quality = 100,
+  }) : quality = quality < 1 ? 1 : (quality > 100 ? 100 : quality);
 
   Map<String, Object?> toChannelArgs() =>
       {'format': format.name, 'quality': quality};

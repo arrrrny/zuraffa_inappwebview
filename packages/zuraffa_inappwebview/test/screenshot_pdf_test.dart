@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:test/test.dart';
 import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
 
@@ -59,6 +61,27 @@ class CaptureFakePort implements WebviewPort {
   }
 
   @override
+  Stream<WebviewNavigationEvent> navigationEvents({required String id}) =>
+      const Stream.empty();
+
+  @override
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) async {}
+
+  @override
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) async {}
+
+  @override
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) =>
+      const Stream.empty();
+  @override
   Future<void> setCookie(WebviewCookie cookie) async {}
 
   @override
@@ -90,6 +113,21 @@ void main() {
           quality: 80,
         ).toChannelArgs(),
         {'format': 'jpeg', 'quality': 80},
+      );
+    });
+
+    test('S1: quality is clamped to 1–100', () {
+      expect(
+        const ScreenshotConfiguration(quality: 500).toChannelArgs(),
+        {'format': 'png', 'quality': 100},
+      );
+      expect(
+        const ScreenshotConfiguration(quality: 0).toChannelArgs(),
+        {'format': 'png', 'quality': 1},
+      );
+      expect(
+        const ScreenshotConfiguration(quality: -3).toChannelArgs(),
+        {'format': 'png', 'quality': 1},
       );
     });
   });

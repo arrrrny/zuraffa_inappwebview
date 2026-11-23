@@ -1,37 +1,27 @@
 /// Canonical dialogue dismissal for clean captures (spec 002).
 ///
-/// Removes fixed/sticky overlays (cookie banners, chat widgets, sticky
-/// navbars) from the top-level document and resets overflow/margin so
-/// screenshots and PDF exports carry no scrollbar artifacts. Pure Dart —
-/// the script is a payload evaluated through the existing
-/// `evaluateJavascript` port op, so no new channel contract is needed.
+/// Hides fixed/sticky overlays (cookie banners, chat widgets, sticky
+/// navbars) in the top-level document and resets overflow/margin so
+/// screenshots and PDF exports carry no scrollbar artifacts. Hiding is
+/// reversible — unlike removal it cannot erase a content-bearing container
+/// (an SPA root is often `position: fixed`). Pure Dart — the script is a
+/// payload evaluated through the existing `evaluateJavascript` port op, so
+/// no new channel contract is needed.
 library;
 
-/// The canonical overlay-removal script.
+/// The canonical overlay-hiding script.
 ///
-/// Contract (spec 002, FR-2/FR-6): removes every element whose computed
-/// position is `fixed` or `sticky` except the two document roots —
-/// `documentElement` and `body` may legitimately be `fixed` themselves (the
-/// common `body { position: fixed }` scroll-lock used behind modals), and
-/// removing them would blank the page while still reporting `removed > 0`.
+/// Contract (spec 002, FR-2/FR-6): hides every element whose computed
+/// position is `fixed` or `sticky` (`display: none`, so a retry can still
+/// restore them) except the two document roots — `documentElement` and
+/// `body` may legitimately be `fixed` themselves (the common
+/// `body { position: fixed }` scroll-lock used behind modals), and hiding
+/// them would blank the page while still reporting a positive count.
 /// Resets `overflow`/`margin` on those roots instead, touches only the
 /// top-level document, and never throws — the whole body is guarded,
-/// returning the removed count. Matches are collected before any removal so
-/// `getComputedStyle` is not interleaved with DOM mutations.
-///
-/// Two costs callers should know about:
-///
-/// * **Removal is destructive.** `el.remove()` detaches nodes that SPA
-///   renderers still track — React's reconciler can later throw
-///   `NotFoundError: Failed to execute 'removeChild'` when it unmounts a
-///   subtree removed underneath it. That is fine for the headless
-///   capture-and-discard flow this repo targets (spec 002 pins it), but a
-///   caller that keeps interacting with the page should hide instead
-///   (`el.style.display = 'none'`).
-/// * **The scan is O(document).** `querySelectorAll('*')` plus one
-///   `getComputedStyle` read per element forces a style recalc across every
-///   node — tens of ms on a multi-thousand-element page, right before a
-///   capture you want fast.
+/// returning the count of elements taken out of the capture. Matches are
+/// collected before any style mutation so `getComputedStyle` is not
+/// interleaved with the mutations it would observe.
 class DialogueDismissScript {
   const DialogueDismissScript._();
 
@@ -48,7 +38,7 @@ class DialogueDismissScript {
       if (pos === 'fixed' || pos === 'sticky') doomed.push(el);
     }
     for (var k = 0; k < doomed.length; k++) {
-      doomed[k].remove();
+      doomed[k].style.setProperty('display', 'none');
       removed++;
     }
     var roots = [document.documentElement, document.body];

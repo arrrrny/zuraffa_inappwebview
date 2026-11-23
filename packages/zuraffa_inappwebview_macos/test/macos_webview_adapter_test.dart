@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:test/test.dart';
 import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
 import 'package:zuraffa_inappwebview_macos/zuraffa_inappwebview_macos.dart';
@@ -90,7 +92,7 @@ void main() {
   });
 
   group('capture ops (spec 003)', () {
-    test('S6: takeScreenshot forwards config args and decodes data',
+    test('S6a: takeScreenshot forwards config args and decodes data',
         () async {
       port = MacosWebviewPort(channel: scripted(payload: {
         'data': [1, 2, 3],
@@ -109,12 +111,12 @@ void main() {
       expect(lastArgs['quality'], 80);
     });
 
-    test('S6: null data passes through as null', () async {
+    test('S6a: null data passes through as null', () async {
       port = MacosWebviewPort(channel: scripted(payload: {'data': null}));
       expect(await port.takeScreenshot(id: 'w'), isNull);
     });
 
-    test('S6: non-list data raises malformed_response', () async {
+    test('S6a: non-list data raises malformed_response', () async {
       port = MacosWebviewPort(channel: scripted(payload: {'data': 'oops'}));
       await expectLater(
         port.takeScreenshot(id: 'w'),
@@ -123,13 +125,246 @@ void main() {
       );
     });
 
-    test('S6: exportPdf rides its own method name', () async {
+    test('S6a: exportPdf rides its own method name', () async {
       port = MacosWebviewPort(channel: scripted(payload: {
         'data': [9, 8, 7],
       }));
       expect(await port.exportPdf(id: 'w'), [9, 8, 7]);
       expect(lastMethod, 'exportPdf');
       expect(lastArgs['id'], 'w');
+    });
+  });
+
+  group('navigation events (spec 004)', () {
+    late StreamController<Object?> events;
+
+    MacosWebviewChannel wired() => MacosWebviewChannel(
+          invoke: (m, a) async => {'ok': true},
+          eventSource: (method) => method == 'navigationEvents'
+              ? events.stream.asBroadcastStream()
+              : const Stream.empty(),
+        );
+
+    setUp(() => events = StreamController<Object?>());
+    tearDown(() => unawaited(events.close()));
+
+    test('N7: decodes and filters by id', () async {
+      port = MacosWebviewPort(channel: wired());
+      final seen = <WebviewNavigationEvent>[];
+      final sub = port.navigationEvents(id: 'w').listen(seen.add);
+      events.add({'id': 'other', 'type': 'started', 'url': 'x'});
+      events.add({'id': 'w', 'type': 'started', 'url': 'https://x.dev/'});
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, hasLength(1));
+      expect(seen.single.url, 'https://x.dev/');
+      expect(seen.single.phase, WebviewNavigationPhase.started);
+      await sub.cancel();
+    });
+
+    test('N7: non-map payload -> malformed_response stream error', () async {
+      port = MacosWebviewPort(channel: wired());
+      final stream = port.navigationEvents(id: 'w');
+      final probe = expectLater(
+        stream,
+        emitsError(isA<MacosWebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+      await Future<void>.delayed(Duration.zero);
+      events.add('oops');
+      await probe;
+    });
+
+    test('N7: map keyed with another id -> dropped, stream stays alive',
+        () async {
+      port = MacosWebviewPort(channel: wired());
+      final seen = <WebviewNavigationEvent>[];
+      final errors = <Object>[];
+      final sub =
+          port.navigationEvents(id: 'w').listen(seen.add, onError: errors.add);
+      events.add({'id': 'other', 3: 'x'});
+      events.add({'id': 'w', 'type': 'started', 'url': 'https://x.dev/'});
+      await Future<void>.delayed(Duration.zero);
+      expect(errors, isEmpty);
+      expect(seen, hasLength(1));
+      await sub.cancel();
+    });
+
+    test('N7: attributable payload with wrong-typed fields -> malformed',
+        () async {
+      port = MacosWebviewPort(channel: wired());
+      final probe = expectLater(
+        port.navigationEvents(id: 'w'),
+        emitsError(isA<MacosWebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+      await Future<void>.delayed(Duration.zero);
+      events.add({'id': 'w', 'type': 'started', 'url': 7});
+      await probe;
+    });
+
+    test('N7: missing event source -> channel_not_wired', () async {
+      port = MacosWebviewPort(
+        channel: MacosWebviewChannel(invoke: (m, a) async => {'ok': true}),
+      );
+      await expectLater(
+        port.navigationEvents(id: 'w'),
+        emitsError(isA<MacosWebviewException>()
+            .having((e) => e.code, 'code', 'channel_not_wired')),
+      );
+    });
+  });
+
+  group('network capture (spec 005)', () {
+    test('C7: setCaptureEnabled ships id + enabled + filter args',
+        () async {
+      port = MacosWebviewPort(channel: scripted(payload: {'ok': true}));
+      await port.setCaptureEnabled(
+        id: 'w',
+        enabled: true,
+        filter: const WebviewCaptureFilter(urlPattern: '/api/', maxBodyBytes: 512),
+      );
+      expect(lastMethod, 'setCaptureEnabled');
+      expect(lastArgs['id'], 'w');
+      expect(lastArgs['enabled'], isTrue);
+      expect(lastArgs['urlPattern'], '/api/');
+      expect(lastArgs['maxBodyBytes'], 512);
+    });
+
+    test('C7: captureEvents decodes + filters by id', () async {
+      final events = StreamController<Object?>();
+      addTearDown(() => unawaited(events.close()));
+      port = MacosWebviewPort(channel: MacosWebviewChannel(
+        invoke: (m, a) async => {'ok': true},
+        eventSource: (method) => method == 'captureEvents'
+            ? events.stream.asBroadcastStream()
+            : const Stream.empty(),
+      ));
+      final seen = <WebviewCaptureEntry>[];
+      final sub = port.captureEvents(id: 'w').listen(seen.add);
+      await Future<void>.delayed(Duration.zero);
+      events.add({'id': 'other', 'url': 'x'});
+      events.add({
+        'id': 'w',
+        'url': 'https://x.dev/api',
+        'method': 'POST',
+        'status': 201,
+      });
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, hasLength(1));
+      expect(seen.single.url, 'https://x.dev/api');
+      expect(seen.single.method, 'POST');
+      expect(seen.single.status, 201);
+      await sub.cancel();
+    });
+
+    test('C7: non-map capture event -> malformed_response', () async {
+      final events = StreamController<Object?>();
+      addTearDown(() => unawaited(events.close()));
+      port = MacosWebviewPort(channel: MacosWebviewChannel(
+        invoke: (m, a) async => {'ok': true},
+        eventSource: (method) => method == 'captureEvents'
+            ? events.stream
+            : const Stream.empty(),
+      ));
+      final bad = expectLater(
+        port.captureEvents(id: 'w'),
+        emitsError(isA<MacosWebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+      await Future<void>.delayed(Duration.zero);
+      events.add('oops');
+      await bad;
+    });
+
+    test('C7: missing event source -> channel_not_wired', () async {
+      port = MacosWebviewPort(
+        channel: MacosWebviewChannel(invoke: (m, a) async => {'ok': true}),
+      );
+      await expectLater(
+        port.captureEvents(id: 'w'),
+        emitsError(isA<MacosWebviewException>()
+            .having((e) => e.code, 'code', 'channel_not_wired')),
+      );
+    });
+  });
+
+  group('loadHtml (spec 008)', () {
+    test('V7: ships id + html + baseUrl on the envelope', () async {
+      port = MacosWebviewPort(channel: scripted(payload: {'ok': true}));
+      await port.loadHtml(
+        id: 'w',
+        html: '<html/>',
+        baseUrl: 'https://x.dev/a',
+      );
+      expect(lastMethod, 'loadHtml');
+      expect(lastArgs['id'], 'w');
+      expect(lastArgs['html'], '<html/>');
+      expect(lastArgs['baseUrl'], 'https://x.dev/a');
+    });
+  });
+
+  group('typed taxonomy (spec 010 FR-3)', () {
+    test('the adapter failure is also a WebviewException', () async {
+      port = MacosWebviewPort(channel: scripted(nativeError: {
+        'code': 'not_supported',
+        'message': 'nope',
+      }));
+      await expectLater(
+        port.runHeadless(id: 'w'),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'not_supported')),
+      );
+    });
+
+    test('a non-integer byte value -> malformed_response', () async {
+      port = MacosWebviewPort(channel: scripted(payload: {
+        'data': [1.5, 2.0],
+      }));
+      await expectLater(
+        port.takeScreenshot(id: 'w'),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+    });
+
+    test('a malformed cookie entry -> malformed_response', () async {
+      port = MacosWebviewPort(channel: scripted(payload: {
+        'cookies': ['oops'],
+      }));
+      await expectLater(
+        port.getCookies(url: 'https://x.dev'),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+      port = MacosWebviewPort(channel: scripted(payload: {
+        'cookies': [
+          {'value': 'x'},
+        ],
+      }));
+      await expectLater(
+        port.getCookies(url: 'https://x.dev'),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+    });
+
+    test('an unrecognised navigation type is dropped', () async {
+      final events = StreamController<Object?>();
+      addTearDown(() => unawaited(events.close()));
+      port = MacosWebviewPort(channel: MacosWebviewChannel(
+        invoke: (m, a) async => {'ok': true},
+        eventSource: (method) => method == 'navigationEvents'
+            ? events.stream
+            : const Stream.empty(),
+      ));
+      final seen = <WebviewNavigationEvent>[];
+      final sub = port.navigationEvents(id: 'w').listen(seen.add);
+      await Future<void>.delayed(Duration.zero);
+      events.add({'id': 'w', 'type': 'loading', 'url': 'https://x.dev/'});
+      events.add({'id': 'w', 'type': 'completed', 'url': 'https://x.dev/'});
+      await Future<void>.delayed(Duration.zero);
+      expect(seen.map((e) => e.phase), [WebviewNavigationPhase.completed]);
+      await sub.cancel();
     });
   });
 }
