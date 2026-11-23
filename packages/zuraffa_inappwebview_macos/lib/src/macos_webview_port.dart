@@ -67,8 +67,10 @@ class MacosWebviewPort implements WebviewPort {
     required String id,
     required String source,
   }) async {
-    final result =
-        await channel.call('evaluateJavascript', {'id': id, 'source': source});
+    final result = await channel.call('evaluateJavascript', {
+      'id': id,
+      'source': source,
+    });
     return result?['result'];
   }
 
@@ -127,12 +129,14 @@ class MacosWebviewPort implements WebviewPort {
   Stream<WebviewNavigationEvent> navigationEvents({required String id}) {
     final source = channel.eventSource;
     if (source == null) {
-      return Stream.error(const MacosWebviewException(
-        'channel_not_wired',
-        'No event source was injected — pass one to the channel to '
-        'subscribe to navigation events.',
-        recoverable: false,
-      ));
+      return Stream.error(
+        const MacosWebviewException(
+          'channel_not_wired',
+          'No event source was injected — pass one to the channel to '
+              'subscribe to navigation events.',
+          recoverable: false,
+        ),
+      );
     }
     // A non-map payload carries no id, so it cannot be attributed: that is
     // the typed `malformed_response` (FR-4). Map payloads are filtered by id
@@ -213,24 +217,35 @@ class MacosWebviewPort implements WebviewPort {
   Stream<WebviewCaptureEntry> captureEvents({required String id}) {
     final source = channel.eventSource;
     if (source == null) {
-      return Stream.error(const MacosWebviewException(
-        'channel_not_wired',
-        'No event source was injected — pass one to the channel to '
-        'subscribe to capture events.',
-        recoverable: false,
-      ));
-    }
-    return source('captureEvents').asyncMap((raw) {
-      if (raw is! Map) {
-        throw const MacosWebviewException(
-          'malformed_response',
-          'A capture event carried a non-map payload.',
+      return Stream.error(
+        const MacosWebviewException(
+          'channel_not_wired',
+          'No event source was injected — pass one to the channel to '
+              'subscribe to capture events.',
           recoverable: false,
-        );
-      }
-      return Map<String, Object?>.from(raw);
-    }).where((map) => map['id'] == id).map(
-          WebviewCaptureEntry.fromChannelArgs,
+        ),
+      );
+    }
+    // A non-map payload carries no id, so it cannot be attributed: that is
+    // the typed `malformed_response`. Map payloads are filtered by id
+    // *before* decoding, so a payload bound for another webview can never
+    // error this subscription's stream.
+    return source('captureEvents')
+        .map((raw) {
+          if (raw is! Map) {
+            throw const MacosWebviewException(
+              'malformed_response',
+              'A capture event carried a non-map payload.',
+              recoverable: false,
+            );
+          }
+          return raw;
+        })
+        .where((payload) => payload['id'] == id)
+        .map(
+          (payload) => WebviewCaptureEntry.fromChannelArgs(
+            Map<String, Object?>.from(payload),
+          ),
         );
   }
 
@@ -261,8 +276,9 @@ class MacosWebviewPort implements WebviewPort {
         );
       }
       try {
-        cookies.add(WebviewCookie.fromChannelArgs(
-            Map<String, Object?>.from(entry)));
+        cookies.add(
+          WebviewCookie.fromChannelArgs(Map<String, Object?>.from(entry)),
+        );
       } on Object catch (error) {
         throw MacosWebviewException(
           'malformed_response',

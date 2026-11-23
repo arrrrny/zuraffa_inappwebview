@@ -9,10 +9,7 @@ void main() {
   late String? lastMethod;
   late AndroidWebviewPort port;
 
-  AndroidWebviewChannel scripted({
-    Object? payload,
-    Object? nativeError,
-  }) =>
+  AndroidWebviewChannel scripted({Object? payload, Object? nativeError}) =>
       AndroidWebviewChannel(
         invoke: (method, args) async {
           lastMethod = method;
@@ -29,7 +26,9 @@ void main() {
 
   group('AndroidWebviewPort over the envelope (WA1-WA6)', () {
     test('WA1: isSupported decodes the supported flag', () async {
-      port = AndroidWebviewPort(channel: scripted(payload: {'supported': true}));
+      port = AndroidWebviewPort(
+        channel: scripted(payload: {'supported': true}),
+      );
       expect(await port.isSupported(), isTrue);
       expect(lastMethod, 'isSupported');
     });
@@ -65,38 +64,53 @@ void main() {
     });
 
     test('WA5: getCookies decodes the cookie list', () async {
-      port = AndroidWebviewPort(channel: scripted(payload: {
-        'cookies': [
-          {'name': 'a', 'value': 'b', 'domain': 'x.dev', 'path': '/', 'secure': true},
-        ],
-      }));
+      port = AndroidWebviewPort(
+        channel: scripted(
+          payload: {
+            'cookies': [
+              {
+                'name': 'a',
+                'value': 'b',
+                'domain': 'x.dev',
+                'path': '/',
+                'secure': true,
+              },
+            ],
+          },
+        ),
+      );
       final cookies = await port.getCookies(url: 'https://x.dev');
       expect(cookies.single.name, 'a');
       expect(cookies.single.domain, 'x.dev');
       expect(cookies.single.secure, isTrue);
     });
 
-    test('WA6: native errors surface as the adapter typed failure',
-        () async {
-      port = AndroidWebviewPort(channel: scripted(nativeError: {
-        'code': 'webview_dead',
-        'message': 'renderer crashed',
-      }));
+    test('WA6: native errors surface as the adapter typed failure', () async {
+      port = AndroidWebviewPort(
+        channel: scripted(
+          nativeError: {'code': 'webview_dead', 'message': 'renderer crashed'},
+        ),
+      );
       await expectLater(
         port.createHeadless(id: 'w'),
-        throwsA(isA<AndroidWebviewException>()
-            .having((e) => e.code, 'code', 'webview_dead')
-            .having((e) => e.recoverable, 'recoverable', isFalse)),
+        throwsA(
+          isA<AndroidWebviewException>()
+              .having((e) => e.code, 'code', 'webview_dead')
+              .having((e) => e.recoverable, 'recoverable', isFalse),
+        ),
       );
     });
   });
 
   group('capture ops (spec 003)', () {
-    test('S6a: takeScreenshot forwards config args and decodes data',
-        () async {
-      port = AndroidWebviewPort(channel: scripted(payload: {
-        'data': [1, 2, 3],
-      }));
+    test('S6a: takeScreenshot forwards config args and decodes data', () async {
+      port = AndroidWebviewPort(
+        channel: scripted(
+          payload: {
+            'data': [1, 2, 3],
+          },
+        ),
+      );
       final bytes = await port.takeScreenshot(
         id: 'w',
         config: const ScreenshotConfiguration(
@@ -120,15 +134,24 @@ void main() {
       port = AndroidWebviewPort(channel: scripted(payload: {'data': 'oops'}));
       await expectLater(
         port.takeScreenshot(id: 'w'),
-        throwsA(isA<AndroidWebviewException>()
-            .having((e) => e.code, 'code', 'malformed_response')),
+        throwsA(
+          isA<AndroidWebviewException>().having(
+            (e) => e.code,
+            'code',
+            'malformed_response',
+          ),
+        ),
       );
     });
 
     test('S6a: exportPdf rides its own method name', () async {
-      port = AndroidWebviewPort(channel: scripted(payload: {
-        'data': [9, 8, 7],
-      }));
+      port = AndroidWebviewPort(
+        channel: scripted(
+          payload: {
+            'data': [9, 8, 7],
+          },
+        ),
+      );
       expect(await port.exportPdf(id: 'w'), [9, 8, 7]);
       expect(lastMethod, 'exportPdf');
       expect(lastArgs['id'], 'w');
@@ -139,11 +162,11 @@ void main() {
     late StreamController<Object?> events;
 
     AndroidWebviewChannel wired() => AndroidWebviewChannel(
-          invoke: (m, a) async => {'ok': true},
-          eventSource: (method) => method == 'navigationEvents'
-              ? events.stream.asBroadcastStream()
-              : const Stream.empty(),
-        );
+      invoke: (m, a) async => {'ok': true},
+      eventSource: (method) => method == 'navigationEvents'
+          ? events.stream.asBroadcastStream()
+          : const Stream.empty(),
+    );
 
     setUp(() => events = StreamController<Object?>());
     tearDown(() => unawaited(events.close()));
@@ -166,41 +189,56 @@ void main() {
       final stream = port.navigationEvents(id: 'w');
       final probe = expectLater(
         stream,
-        emitsError(isA<AndroidWebviewException>()
-            .having((e) => e.code, 'code', 'malformed_response')),
+        emitsError(
+          isA<AndroidWebviewException>().having(
+            (e) => e.code,
+            'code',
+            'malformed_response',
+          ),
+        ),
       );
       await Future<void>.delayed(Duration.zero);
       events.add('oops');
       await probe;
     });
 
-    test('N7: map keyed with another id -> dropped, stream stays alive',
-        () async {
-      port = AndroidWebviewPort(channel: wired());
-      final seen = <WebviewNavigationEvent>[];
-      final errors = <Object>[];
-      final sub =
-          port.navigationEvents(id: 'w').listen(seen.add, onError: errors.add);
-      events.add({'id': 'other', 3: 'x'});
-      events.add({'id': 'w', 'type': 'started', 'url': 'https://x.dev/'});
-      await Future<void>.delayed(Duration.zero);
-      expect(errors, isEmpty);
-      expect(seen, hasLength(1));
-      await sub.cancel();
-    });
+    test(
+      'N7: map keyed with another id -> dropped, stream stays alive',
+      () async {
+        port = AndroidWebviewPort(channel: wired());
+        final seen = <WebviewNavigationEvent>[];
+        final errors = <Object>[];
+        final sub = port
+            .navigationEvents(id: 'w')
+            .listen(seen.add, onError: errors.add);
+        events.add({'id': 'other', 3: 'x'});
+        events.add({'id': 'w', 'type': 'started', 'url': 'https://x.dev/'});
+        await Future<void>.delayed(Duration.zero);
+        expect(errors, isEmpty);
+        expect(seen, hasLength(1));
+        await sub.cancel();
+      },
+    );
 
-    test('N7: attributable payload with wrong-typed fields -> malformed',
-        () async {
-      port = AndroidWebviewPort(channel: wired());
-      final probe = expectLater(
-        port.navigationEvents(id: 'w'),
-        emitsError(isA<AndroidWebviewException>()
-            .having((e) => e.code, 'code', 'malformed_response')),
-      );
-      await Future<void>.delayed(Duration.zero);
-      events.add({'id': 'w', 'type': 'started', 'url': 7});
-      await probe;
-    });
+    test(
+      'N7: attributable payload with wrong-typed fields -> malformed',
+      () async {
+        port = AndroidWebviewPort(channel: wired());
+        final probe = expectLater(
+          port.navigationEvents(id: 'w'),
+          emitsError(
+            isA<AndroidWebviewException>().having(
+              (e) => e.code,
+              'code',
+              'malformed_response',
+            ),
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+        events.add({'id': 'w', 'type': 'started', 'url': 7});
+        await probe;
+      },
+    );
 
     test('N7: missing event source -> channel_not_wired', () async {
       port = AndroidWebviewPort(
@@ -208,20 +246,27 @@ void main() {
       );
       await expectLater(
         port.navigationEvents(id: 'w'),
-        emitsError(isA<AndroidWebviewException>()
-            .having((e) => e.code, 'code', 'channel_not_wired')),
+        emitsError(
+          isA<AndroidWebviewException>().having(
+            (e) => e.code,
+            'code',
+            'channel_not_wired',
+          ),
+        ),
       );
     });
   });
 
   group('network capture (spec 005)', () {
-    test('C7: setCaptureEnabled ships id + enabled + filter args',
-        () async {
+    test('C7: setCaptureEnabled ships id + enabled + filter args', () async {
       port = AndroidWebviewPort(channel: scripted(payload: {'ok': true}));
       await port.setCaptureEnabled(
         id: 'w',
         enabled: true,
-        filter: const WebviewCaptureFilter(urlPattern: '/api/', maxBodyBytes: 512),
+        filter: const WebviewCaptureFilter(
+          urlPattern: '/api/',
+          maxBodyBytes: 512,
+        ),
       );
       expect(lastMethod, 'setCaptureEnabled');
       expect(lastArgs['id'], 'w');
@@ -233,12 +278,14 @@ void main() {
     test('C7: captureEvents decodes + filters by id', () async {
       final events = StreamController<Object?>();
       addTearDown(() => unawaited(events.close()));
-      port = AndroidWebviewPort(channel: AndroidWebviewChannel(
-        invoke: (m, a) async => {'ok': true},
-        eventSource: (method) => method == 'captureEvents'
-            ? events.stream.asBroadcastStream()
-            : const Stream.empty(),
-      ));
+      port = AndroidWebviewPort(
+        channel: AndroidWebviewChannel(
+          invoke: (m, a) async => {'ok': true},
+          eventSource: (method) => method == 'captureEvents'
+              ? events.stream.asBroadcastStream()
+              : const Stream.empty(),
+        ),
+      );
       final seen = <WebviewCaptureEntry>[];
       final sub = port.captureEvents(id: 'w').listen(seen.add);
       await Future<void>.delayed(Duration.zero);
@@ -257,19 +304,53 @@ void main() {
       await sub.cancel();
     });
 
+    test('C7: foreign-id payloads never error this subscription', () async {
+      final events = StreamController<Object?>();
+      addTearDown(() => unawaited(events.close()));
+      port = AndroidWebviewPort(
+        channel: AndroidWebviewChannel(
+          invoke: (m, a) async => {'ok': true},
+          eventSource: (method) => method == 'captureEvents'
+              ? events.stream.asBroadcastStream()
+              : const Stream.empty(),
+        ),
+      );
+      final errors = <Object>[];
+      final seen = <WebviewCaptureEntry>[];
+      final sub = port
+          .captureEvents(id: 'w')
+          .listen(seen.add, onError: errors.add);
+      await Future<void>.delayed(Duration.zero);
+      // Dropped by id *before* decode, so a body that would fail decoding
+      // cannot error this subscriber.
+      events.add({'id': 'other', 'url': 42});
+      events.add({'id': 'w', 'url': 'https://x.dev/api', 'method': 'GET'});
+      await Future<void>.delayed(Duration.zero);
+      expect(errors, isEmpty);
+      expect(seen, hasLength(1));
+      expect(seen.single.url, 'https://x.dev/api');
+      await sub.cancel();
+    });
+
     test('C7: non-map capture event -> malformed_response', () async {
       final events = StreamController<Object?>();
       addTearDown(() => unawaited(events.close()));
-      port = AndroidWebviewPort(channel: AndroidWebviewChannel(
-        invoke: (m, a) async => {'ok': true},
-        eventSource: (method) => method == 'captureEvents'
-            ? events.stream
-            : const Stream.empty(),
-      ));
+      port = AndroidWebviewPort(
+        channel: AndroidWebviewChannel(
+          invoke: (m, a) async => {'ok': true},
+          eventSource: (method) =>
+              method == 'captureEvents' ? events.stream : const Stream.empty(),
+        ),
+      );
       final bad = expectLater(
         port.captureEvents(id: 'w'),
-        emitsError(isA<AndroidWebviewException>()
-            .having((e) => e.code, 'code', 'malformed_response')),
+        emitsError(
+          isA<AndroidWebviewException>().having(
+            (e) => e.code,
+            'code',
+            'malformed_response',
+          ),
+        ),
       );
       await Future<void>.delayed(Duration.zero);
       events.add('oops');
@@ -282,8 +363,13 @@ void main() {
       );
       await expectLater(
         port.captureEvents(id: 'w'),
-        emitsError(isA<AndroidWebviewException>()
-            .having((e) => e.code, 'code', 'channel_not_wired')),
+        emitsError(
+          isA<AndroidWebviewException>().having(
+            (e) => e.code,
+            'code',
+            'channel_not_wired',
+          ),
+        ),
       );
     });
   });
@@ -291,11 +377,7 @@ void main() {
   group('loadHtml (spec 008)', () {
     test('V7: ships id + html + baseUrl on the envelope', () async {
       port = AndroidWebviewPort(channel: scripted(payload: {'ok': true}));
-      await port.loadHtml(
-        id: 'w',
-        html: '<html/>',
-        baseUrl: 'https://x.dev/a',
-      );
+      await port.loadHtml(id: 'w', html: '<html/>', baseUrl: 'https://x.dev/a');
       expect(lastMethod, 'loadHtml');
       expect(lastArgs['id'], 'w');
       expect(lastArgs['html'], '<html/>');
@@ -305,58 +387,93 @@ void main() {
 
   group('typed taxonomy (spec 010 FR-3)', () {
     test('the adapter failure is also a WebviewException', () async {
-      port = AndroidWebviewPort(channel: scripted(nativeError: {
-        'code': 'not_supported',
-        'message': 'nope',
-      }));
+      port = AndroidWebviewPort(
+        channel: scripted(
+          nativeError: {'code': 'not_supported', 'message': 'nope'},
+        ),
+      );
       await expectLater(
         port.runHeadless(id: 'w'),
-        throwsA(isA<WebviewException>()
-            .having((e) => e.code, 'code', 'not_supported')),
+        throwsA(
+          isA<WebviewException>().having(
+            (e) => e.code,
+            'code',
+            'not_supported',
+          ),
+        ),
       );
     });
 
     test('a non-integer byte value -> malformed_response', () async {
-      port = AndroidWebviewPort(channel: scripted(payload: {
-        'data': [1.5, 2.0],
-      }));
+      port = AndroidWebviewPort(
+        channel: scripted(
+          payload: {
+            'data': [1.5, 2.0],
+          },
+        ),
+      );
       await expectLater(
         port.takeScreenshot(id: 'w'),
-        throwsA(isA<WebviewException>()
-            .having((e) => e.code, 'code', 'malformed_response')),
+        throwsA(
+          isA<WebviewException>().having(
+            (e) => e.code,
+            'code',
+            'malformed_response',
+          ),
+        ),
       );
     });
 
     test('a malformed cookie entry -> malformed_response', () async {
-      port = AndroidWebviewPort(channel: scripted(payload: {
-        'cookies': ['oops'],
-      }));
-      await expectLater(
-        port.getCookies(url: 'https://x.dev'),
-        throwsA(isA<WebviewException>()
-            .having((e) => e.code, 'code', 'malformed_response')),
+      port = AndroidWebviewPort(
+        channel: scripted(
+          payload: {
+            'cookies': ['oops'],
+          },
+        ),
       );
-      port = AndroidWebviewPort(channel: scripted(payload: {
-        'cookies': [
-          {'value': 'x'},
-        ],
-      }));
       await expectLater(
         port.getCookies(url: 'https://x.dev'),
-        throwsA(isA<WebviewException>()
-            .having((e) => e.code, 'code', 'malformed_response')),
+        throwsA(
+          isA<WebviewException>().having(
+            (e) => e.code,
+            'code',
+            'malformed_response',
+          ),
+        ),
+      );
+      port = AndroidWebviewPort(
+        channel: scripted(
+          payload: {
+            'cookies': [
+              {'value': 'x'},
+            ],
+          },
+        ),
+      );
+      await expectLater(
+        port.getCookies(url: 'https://x.dev'),
+        throwsA(
+          isA<WebviewException>().having(
+            (e) => e.code,
+            'code',
+            'malformed_response',
+          ),
+        ),
       );
     });
 
     test('an unrecognised navigation type is dropped', () async {
       final events = StreamController<Object?>();
       addTearDown(() => unawaited(events.close()));
-      port = AndroidWebviewPort(channel: AndroidWebviewChannel(
-        invoke: (m, a) async => {'ok': true},
-        eventSource: (method) => method == 'navigationEvents'
-            ? events.stream
-            : const Stream.empty(),
-      ));
+      port = AndroidWebviewPort(
+        channel: AndroidWebviewChannel(
+          invoke: (m, a) async => {'ok': true},
+          eventSource: (method) => method == 'navigationEvents'
+              ? events.stream
+              : const Stream.empty(),
+        ),
+      );
       final seen = <WebviewNavigationEvent>[];
       final sub = port.navigationEvents(id: 'w').listen(seen.add);
       await Future<void>.delayed(Duration.zero);
