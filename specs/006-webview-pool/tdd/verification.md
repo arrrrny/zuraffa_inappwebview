@@ -20,6 +20,7 @@ before implementation and the GREEN totals (116/116 repo-wide).
 | US3-2 pool_exhausted | P5b |
 | US3-3 TTL sweep | P6 |
 | US4-1 disposeAll zero-state | P7 |
+| FR-6 maxPerDomain | P8a–P8d |
 
 ## Mutants (reasoned)
 
@@ -31,10 +32,8 @@ before implementation and the GREEN totals (116/116 repo-wide).
 
 ## Gaps (non-blocking)
 
-- `maxPerDomain` (FR-6) is pinned by P5c/P5d. *(Post-review fix: the
-  dedicated per-domain eviction limb was unreachable — a same-domain idle
-  is always reused by the affinity loop first — so it was removed in
-  favour of the typed `pool_exhausted` fallback, and FR-6 was reworded to
-  match.)*
+- maxPerDomain's dedicated path (FR-6) is pinned by P8a–P8d: idle
+  same-domain reuse, cap overflow → `pool_exhausted`, release frees a
+  slot, and another domain is unaffected.
 - Memory-pressure lifecycle listeners defer to the app shell (spec
   Assumptions).

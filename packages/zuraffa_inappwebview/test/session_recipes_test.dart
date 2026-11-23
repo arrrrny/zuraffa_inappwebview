@@ -5,7 +5,7 @@ import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
 
 WebviewNavigationEvent _completed(String url, {bool mainFrame = true}) =>
     WebviewNavigationEvent.fromChannelArgs(
-        {'type': 'completed', 'url': url, 'isMainFrame': mainFrame});
+        {'type': 'completed', 'url': url, 'isMainFrame': mainFrame})!;
 
 void main() {
   group('US1 — recorder', () {
@@ -54,7 +54,7 @@ void main() {
       final recorder = RecipeRecorder(name: 'noise');
       recorder.handleEvent('w',
           WebviewNavigationEvent.fromChannelArgs(
-              {'type': 'started', 'url': 'https://a.dev/'}));
+              {'type': 'started', 'url': 'https://a.dev/'})!);
       recorder.handleEvent('w', _completed('https://a.dev/frame',
           mainFrame: false));
       expect(recorder.finish().steps, isEmpty);
@@ -224,6 +224,13 @@ class _RecipeFakePort implements WebviewPort {
   @override
   Stream<WebviewNavigationEvent> navigationEvents({required String id}) =>
       const Stream.empty();
+
+  @override
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) async {}
 
   @override
   Future<void> setCaptureEnabled({

@@ -117,6 +117,13 @@ class RecordingWebviewPort implements WebviewPort {
       const Stream.empty();
 
   @override
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) async {}
+
+  @override
   Future<void> setCaptureEnabled({
     required String id,
     required bool enabled,
@@ -172,8 +179,28 @@ void main() {
   group('US2 — canonical script', () {
     final source = DialogueDismissScript.source;
 
-    test('D3: canonical source is pinned (removal contract, golden)', () {
+    test('D3: removes computed fixed/sticky elements', () {
+      expect(source, contains('getComputedStyle'));
+      expect(source, contains('fixed'));
+      expect(source, contains('sticky'));
+      expect(source, contains('.remove()'));
+      // The exact condition is pinned: a substring test alone would accept
+      // a no-op dismisser (`pos === "fixed" && pos === "sticky"`).
+      expect(source, contains("pos === 'fixed' || pos === 'sticky'"));
+    });
+
+    test('D3 golden: canonical source is pinned to the shipped copy', () {
       expect(_normalizeSource(source), _normalizeSource(_goldenDismissSource));
+    });
+
+    test('D3b: the document roots are never removed', () {
+      expect(
+        source,
+        contains(
+          'if (el === document.documentElement || el === document.body) '
+          'continue;',
+        ),
+      );
     });
 
     test('D4: resets overflow/margin on documentElement and body', () {
@@ -229,8 +256,10 @@ void main() {
       expect(port.evaluated, hasLength(1));
     });
 
-    test('D9b: a port Error is swallowed too', () async {
-      port.evaluateHook = (_) => throw StateError('misbehaving port');
+    test('D9: non-Exception errors are swallowed as well', () async {
+      // A mis-wired port throws Error subclasses (StateError/TypeError),
+      // which the previous `on Exception` guard let through.
+      port.evaluateHook = (_) => throw StateError('mis-wired port');
       await service.dismissDialogues(id: 'scraper');
       expect(port.evaluated, hasLength(1));
     });

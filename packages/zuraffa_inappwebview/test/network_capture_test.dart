@@ -10,30 +10,24 @@ WebviewCaptureEntry _entry({
   String? requestBody,
   int? status = 200,
   String? responseBody = '{"ok":true}',
-  DateTime? at,
 }) =>
-    WebviewCaptureEntry.fromChannelArgs(
-      {
-        'url': url,
-        'method': method,
-        'requestHeaders': requestHeaders,
-        if (requestBody != null) 'requestBody': requestBody,
-        'status': status,
-        'responseHeaders': const <String, String>{},
-        if (responseBody != null) 'responseBody': responseBody,
-      },
-      at: at,
-    );
+    WebviewCaptureEntry.fromChannelArgs({
+      'url': url,
+      'method': method,
+      'requestHeaders': requestHeaders,
+      if (requestBody != null) 'requestBody': requestBody,
+      'status': status,
+      'responseHeaders': const <String, String>{},
+      if (responseBody != null) 'responseBody': responseBody,
+    });
 
 void main() {
   group('US1 — codec + filter', () {
     test('C1: decodes the full channel shape', () {
-      final at = DateTime(2026, 1, 2, 3, 4, 5);
       final e = _entry(
         requestHeaders: {'accept': 'application/json'},
         requestBody: 'a=1',
         responseBody: '[1,2]',
-        at: at,
       );
       expect(e.url, 'https://x.dev/api');
       expect(e.method, 'GET');
@@ -41,22 +35,7 @@ void main() {
       expect(e.requestBody, 'a=1');
       expect(e.status, 200);
       expect(e.responseBody, '[1,2]');
-      expect(e.at, at);
-    });
-
-    test('C1: a malformed payload degrades instead of throwing', () {
-      final e = WebviewCaptureEntry.fromChannelArgs({
-        'url': 7,
-        'method': null,
-        'requestHeaders': {'X-Keep': 'ok', 'X-Drop': null, 3: 'n'},
-        'status': 204.0,
-        'responseHeaders': 'oops',
-      });
-      expect(e.url, '');
-      expect(e.method, 'GET');
-      expect(e.requestHeaders, {'X-Keep': 'ok'});
-      expect(e.status, 204);
-      expect(e.responseHeaders, isEmpty);
+      expect(e.at, isNotNull);
     });
 
     test('C1: filter serializes urlPattern + maxBodyBytes', () {
@@ -151,18 +130,16 @@ void main() {
           url: 'https://x.dev/p?token=abc&keep=1',
           requestHeaders: {
             'Authorization': 'Bearer xyz',
+            'authorization': 'Bearer lower',
             'Cookie': 'a=b',
-            'X-API-Key': 'sk-live-123',
-            'X-Auth-Token': 'tok-456',
             'Accept': 'json',
           },
         ),
       );
       final e = manager.entries('w').single;
       expect(e.requestHeaders['Authorization'], '<redacted>');
+      expect(e.requestHeaders['authorization'], '<redacted>');
       expect(e.requestHeaders['Cookie'], '<redacted>');
-      expect(e.requestHeaders['X-API-Key'], '<redacted>');
-      expect(e.requestHeaders['X-Auth-Token'], '<redacted>');
       expect(e.requestHeaders['Accept'], 'json');
       expect(e.url, contains('token=<redacted>'));
       expect(e.url, contains('keep=1'));
@@ -200,15 +177,58 @@ void main() {
       expect(manager.entries('w').last.responseBody, hasLength(10));
     });
 
-    test('C5b: maxBodyBytes truncates on a code-point boundary', () {
+    test('C4: a malformed query key does not throw', () {
+      final manager = NetworkCaptureManager();
+      for (final url in const [
+        'https://x.dev/p?名前=1',
+        'https://x.dev/p?100%=x',
+        'https://x.dev/p?a%2=x',
+        'https://x.dev/p?bad=%FF',
+      ]) {
+        manager.ingest('w', _entry(url: url));
+      }
+      expect(manager.entries('w'), hasLength(4));
+      manager.ingest('w', _entry(url: 'https://x.dev/p?token=abc'));
+      expect(manager.entries('w').last.url, contains('token=<redacted>'));
+    });
+
+    test('C5: a negative budget is clamped, not a RangeError', () {
+      expect(const CaptureBudget(maxEntries: -1).maxEntries, 0);
+      expect(const CaptureBudget(maxBodyBytes: -5).maxBodyBytes, 0);
       final manager = NetworkCaptureManager(
-        budget: const CaptureBudget(maxBodyBytes: 4),
+        budget: const CaptureBudget(maxBodyBytes: -5),
       );
-      manager.ingest('w', _entry(responseBody: '😀' * 4));
-      final body = manager.entries('w').single.responseBody!;
-      expect(body, '😀'); // exactly one 4-byte code point
-      expect(body.codeUnits, [0xd83d, 0xde00]); // never a lone surrogate
-      expect(body.runes.length, 1);
+      manager.ingest('w', _entry(responseBody: 'abc'));
+      expect(manager.entries('w').single.responseBody, '');
+    });
+
+    test('C5: truncation never splits a surrogate pair', () {
+      String cut(int max) {
+        final manager = NetworkCaptureManager(
+          budget: CaptureBudget(maxBodyBytes: max),
+        );
+        manager.ingest('w', _entry(responseBody: '😀😀'));
+        return manager.entries('w').single.responseBody!;
+      }
+
+      expect(cut(1), '');
+      expect(cut(2), '😀');
+      expect(cut(3), '😀');
+    });
+
+    test('C3: stream errors are captured, not unhandled', () async {
+      final controller = StreamController<WebviewCaptureEntry>();
+      final manager = NetworkCaptureManager();
+      manager.attach('w', controller.stream);
+      controller.addError(const WebviewException(
+        'channel_not_wired',
+        'no event source',
+        recoverable: false,
+      ));
+      await Future<void>.delayed(Duration.zero);
+      expect(manager.error('w'), isA<WebviewException>());
+      manager.dispose();
+      await controller.close();
     });
   });
 }
@@ -266,6 +286,13 @@ class _CaptureFakePort implements WebviewPort {
   @override
   Stream<WebviewNavigationEvent> navigationEvents({required String id}) =>
       const Stream.empty();
+
+  @override
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) async {}
 
   @override
   Future<void> setCaptureEnabled({

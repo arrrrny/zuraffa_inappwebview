@@ -135,9 +135,7 @@ Future<ReplayResult> replay(
 }
 
 /// [RecipeDriver] over [WebviewService] (spec 007 US3): loads validated
-/// urls and clicks selectors via the canonical tap script
-/// `document.querySelector(sel)?.click()`. Tapping a selector that
-/// matches nothing is a no-op, not a failure.
+/// urls and clicks selectors via the canonical tap script.
 class WebviewServiceRecipeDriver implements RecipeDriver {
   final WebviewService service;
   final String webviewId;
@@ -153,14 +151,14 @@ class WebviewServiceRecipeDriver implements RecipeDriver {
         url: WebviewUri(url.toString()),
       );
 
+  /// The selector is encoded as a JS string literal (`jsonEncode` escapes
+  /// quotes, backslashes and newlines alike), and a missing element is
+  /// reported as `false` instead of calling `null()`.
   @override
   Future<void> tap(String selector) => service.evaluateJavascript(
         id: webviewId,
-        source: 'document.querySelector(${_quote(selector)})?.click()',
+        source: '(() => { const el = document.querySelector('
+            '${jsonEncode(selector)});'
+            ' if (!el) return false; el.click(); return true; })()',
       );
-
-  /// The selector as a JavaScript string literal. [jsonEncode] escapes
-  /// quotes, backslashes and control characters in one step, so no
-  /// selector can produce a script that does not parse.
-  static String _quote(String raw) => jsonEncode(raw);
 }
