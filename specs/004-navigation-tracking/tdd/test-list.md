@@ -8,9 +8,11 @@
 | N4 | same url within dedup window collapses to earliest entry | T005 | DONE |
 | N5 | mainFrameOnly drops sub-frame events by default | T006 | DONE |
 | N6 | hasCycle true for A→B→A, false for A→B→C; detach stops recording | T007 | DONE |
+| N6b | a typed stream error is captured by `error(id)` instead of escaping as an unhandled async error | T007 | DONE |
 | N7a | android adapter: id-filtered decode (id filter before key decode), malformed on non-map or wrong-typed fields, channel_not_wired without source | T008 | DONE |
 | N7b | ios adapter: same | T009 | DONE |
 | N7c | macos adapter: same | T010 | DONE |
 | N8 | `clear(id)` drops one record; `dispose()` drops all records + cancels subscriptions | T007 | DONE |
 
-Counts: 11 behaviors — 11 driven red → green, 0 remaining.
+Counts: 11 behaviors, 11 driven red → green, 0 remaining. (`N6b` appended in
+the fixes round.)

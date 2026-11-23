@@ -1,5 +1,6 @@
 import 'dialogue_dismiss.dart';
 import 'navigation_tracking.dart';
+import 'network_capture.dart';
 import 'webview_exception.dart';
 import 'webview_port.dart';
 import 'webview_types.dart';
@@ -79,6 +80,11 @@ class WebviewService {
 
   /// Captures the rendered page as image bytes; null when the platform
   /// could not capture (spec 003).
+  ///
+  /// Gated on `created`, not `running` (FR-1): capture is legal on a
+  /// webview that was created but never `runHeadless`-ed. What that yields
+  /// is platform-defined — a blank page on some platforms — so a caller
+  /// that wants the rendered document must run the webview first.
   Future<List<int>?> takeScreenshot({
     required String id,
     ScreenshotConfiguration? config,
@@ -88,9 +94,23 @@ class WebviewService {
   }
 
   /// Exports the rendered page as PDF bytes; null on failure (spec 003).
+  ///
+  /// Same `created`-not-`running` gate as [takeScreenshot]: export of a
+  /// never-run webview is platform-defined. Run it first for the rendered
+  /// document.
   Future<List<int>?> exportPdf({required String id}) {
     _requireCreated(id);
     return port.exportPdf(id: id);
+  }
+
+  /// Renders [html] directly with an optional [baseUrl] (spec 008).
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) {
+    _requireCreated(id);
+    return port.loadHtml(id: id, html: html, baseUrl: baseUrl);
   }
 
   /// Navigation events for the webview bound to [id] (spec 004).
@@ -129,6 +149,22 @@ class WebviewService {
     await port.disposeHeadless(id: id);
     _created.remove(id);
     _running.remove(id);
+  }
+
+  /// Enables/disables network capture for [id] (spec 005).
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) {
+    _requireCreated(id);
+    return port.setCaptureEnabled(id: id, enabled: enabled, filter: filter);
+  }
+
+  /// Intercepted traffic stream for [id] (spec 005).
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) {
+    _requireCreated(id);
+    return port.captureEvents(id: id);
   }
 
   // -- Cookies are global (shared store), no id scoping. --
@@ -225,7 +261,27 @@ class UnwiredWebviewPort implements WebviewPort {
   /// synchronously — the service's `_requireCreated` style, so an unwired
   /// port fails fast at the call site instead of on `listen`.
   @override
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) =>
+      _unwired();
+
+  @override
   Stream<WebviewNavigationEvent> navigationEvents({required String id}) =>
+      _unwired();
+
+  @override
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) =>
+      _unwired();
+
+  @override
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) =>
       _unwired();
 
   @override

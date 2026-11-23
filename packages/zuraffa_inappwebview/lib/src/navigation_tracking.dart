@@ -15,6 +15,11 @@ class WebviewNavigationEvent {
   final String url;
   final bool isMainFrame;
   final String? errorCode;
+
+  /// When the event was observed. **Informational only** —
+  /// [NavigationTracker] timestamps recorded visits from its own
+  /// [NavigationTracker.clock], never from this field, so a caller must not
+  /// treat it as the timing authority behind dedup or [UrlVisit.at].
   final DateTime at;
 
   WebviewNavigationEvent({
@@ -40,7 +45,7 @@ class WebviewNavigationEvent {
     Map<String, Object?> args, {
     DateTime? at,
   }) {
-    final phase = _phaseNamed(args['type']);
+    final phase = phaseOf(args['type']);
     if (phase == null) return null;
     final url = args['url'];
     final isMainFrame = args['isMainFrame'];
@@ -61,9 +66,10 @@ class WebviewNavigationEvent {
     );
   }
 
-  static WebviewNavigationPhase? _phaseNamed(Object? name) {
+  /// The phase named by a raw channel `type`, or null when unrecognised.
+  static WebviewNavigationPhase? phaseOf(Object? raw) {
     for (final phase in WebviewNavigationPhase.values) {
-      if (phase.name == name) return phase;
+      if (phase.name == raw) return phase;
     }
     return null;
   }
@@ -102,31 +108,59 @@ class UrlVisit {
 ///   [dedupWindow] collapses to its earliest occurrence.
 /// - `mainFrameOnly` (default) drops sub-frame events.
 /// - [hasCycle] reports a revisit loop (A → B → A) over the record.
+/// - The record is capped at [maxEntries] visits per id, oldest dropped
+///   first: a redirect/consent loop — exactly the case [hasCycle] exists
+///   to detect — must not grow without bound in a long scraping session.
 ///
 /// Works without a webview: [handleEvent] operates on a plain instance;
 /// [attach] wires a webview's event stream.
 class NavigationTracker {
   static const Duration defaultDedupWindow = Duration(milliseconds: 500);
 
+  /// Most visits retained per id; the oldest are dropped past this cap.
+  static const int defaultMaxEntries = 500;
+
   final Duration dedupWindow;
   final bool mainFrameOnly;
+  final int maxEntries;
   final DateTime Function() clock;
 
   final Map<String, List<UrlVisit>> _entries = {};
+  final Map<String, Map<String, int>> _urlCounts = {};
   final Map<String, StreamSubscription<WebviewNavigationEvent>> _subs = {};
+  final Map<String, Object> _errors = {};
 
   NavigationTracker({
     this.dedupWindow = defaultDedupWindow,
     this.mainFrameOnly = true,
+    this.maxEntries = defaultMaxEntries,
     DateTime Function()? clock,
   }) : clock = clock ?? DateTime.now;
 
   /// Records events from [events] under [id], replacing any previous
   /// subscription for that id. Cancel with [detach].
+  ///
+  /// The previous subscription is cancelled before the new one is installed,
+  /// but `StreamSubscription.cancel()` is asynchronous: a re-attach in the
+  /// same synchronous turn can briefly hold both, double-recording an event
+  /// delivered in that window. Await a turn between back-to-back attaches
+  /// when that matters.
+  ///
+  /// The streams are specified to carry typed errors (`channel_not_wired`,
+  /// `malformed_response`), so a handler is installed: without one they
+  /// would surface as unhandled async errors. The last one is readable
+  /// via [error].
   void attach(String id, Stream<WebviewNavigationEvent> events) {
-    _subs[id]?.cancel();
-    _subs[id] = events.listen((e) => handleEvent(id, e));
+    unawaited(_subs[id]?.cancel());
+    _errors.remove(id);
+    _subs[id] = events.listen(
+      (e) => handleEvent(id, e),
+      onError: (Object error, StackTrace _) => _errors[id] = error,
+    );
   }
+
+  /// The last stream error observed for [id], if any.
+  Object? error(String id) => _errors[id];
 
   /// Stops recording for [id] (keeps the record accumulated so far).
   void detach(String id) {
@@ -137,6 +171,7 @@ class NavigationTracker {
   /// this is the cleanup hook for a webview id that is gone for good.
   void clear(String id) {
     _entries.remove(id);
+    _urlCounts.remove(id);
   }
 
   /// Cancels every subscription and drops every record — for a tracker that
@@ -147,6 +182,7 @@ class NavigationTracker {
     }
     _subs.clear();
     _entries.clear();
+    _urlCounts.clear();
   }
 
   /// Records one event. Pure — no webview required. Timing authority is
@@ -168,6 +204,17 @@ class NavigationTracker {
       at: now,
       errorCode: event.errorCode,
     ));
+    final counts = _urlCounts.putIfAbsent(id, () => <String, int>{});
+    counts[event.url] = (counts[event.url] ?? 0) + 1;
+    if (visits.length > maxEntries) {
+      final dropped = visits.removeAt(0);
+      final remaining = (counts[dropped.url] ?? 1) - 1;
+      if (remaining <= 0) {
+        counts.remove(dropped.url);
+      } else {
+        counts[dropped.url] = remaining;
+      }
+    }
   }
 
   /// The recorded visits for [id], in order (unmodifiable).
@@ -180,10 +227,12 @@ class NavigationTracker {
 
   /// Whether the record shows a revisit loop: the latest url reappears
   /// earlier in the record (A → B → A).
+  ///
+  /// O(1): per-url visit counts are maintained alongside the list, so a
+  /// caller polling this on the loop it is trying to detect pays nothing.
   bool hasCycle(String id) {
-    final urls = _entries[id]?.map((v) => v.url).toList() ?? const [];
-    if (urls.length < 3) return false;
-    final last = urls.last;
-    return urls.take(urls.length - 1).contains(last);
+    final visits = _entries[id];
+    if (visits == null || visits.length < 3) return false;
+    return (_urlCounts[id]?[visits.last.url] ?? 0) > 1;
   }
 }

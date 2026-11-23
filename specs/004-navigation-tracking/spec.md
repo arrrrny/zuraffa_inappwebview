@@ -51,8 +51,9 @@ codec round-trip and guards.
 A caller constructs `NavigationTracker()` and either feeds it events
 directly (`handleEvent`) or attaches it to a webview's event stream
 (`attach(id, stream)`). The tracker keeps an ordered, deduplicated record
-per webview id: the same url observed inside the dedup window (500ms
-default) collapses to one entry keeping the earliest; sub-frame events are
+per webview id: a (phase + url) transition repeating immediately after the
+preceding visit inside the dedup window (500ms default) collapses into that
+visit — the scope is adjacency, not the whole window; sub-frame events are
 dropped by default (`mainFrameOnly`). Cycle detection reports A→B→A
 revisits — the fingerprint zikzak used to detect redirect/login loops.
 

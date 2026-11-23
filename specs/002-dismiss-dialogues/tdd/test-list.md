@@ -8,6 +8,7 @@ Behaviors derived from spec.md acceptance scenarios + plan.md. All in
 | D1 | `WebviewSettings().toChannelArgs()['dismissDialogues'] == false` (default off) | T001 | DONE |
 | D2 | `dismissDialogues: true` serializes as `true` in channel args | T001 | DONE |
 | D3 | canonical script hides `position: fixed`/`sticky` elements other than the document roots, pinned to a golden copy of the shipped source (hiding contract) | T002 | DONE |
+| D3a | the exact fixed/sticky condition and the document-root skip are pinned in the shipped source | T002 | DONE |
 | D3b | hiding is reversible — the shipped source never calls `.remove()` | T002 | DONE |
 | D4 | canonical script resets `overflow`/`margin` on `documentElement` + `body` (reset block pinned to golden) | T002 | DONE |
 | D5 | canonical script touches only the top-level document (no iframe/frames recursion) | T002 | DONE |
@@ -15,10 +16,13 @@ Behaviors derived from spec.md acceptance scenarios + plan.md. All in
 | D7 | `service.dismissDialogues(id)` sends exactly one `evaluateJavascript` with the canonical source | T004 | DONE |
 | D8 | unknown id → typed `not_created` failure | T004 | DONE |
 | D9 | port raising during dismissal is swallowed (completes normally) | T004 | DONE |
+| D9b | an `Error` (not just an `Exception`) from the port is swallowed too | T004 | DONE |
 | D10 | policy `attempts: 3` → three evaluations (with delay between) | T005 | DONE |
 | D11 | an `Error` (not only an `Exception`) raised during dismissal is swallowed too | T004 | DONE |
 
-Counts: 11 behaviors — 11 driven red → green, 0 remaining.
+Counts: 13 behaviors, 13 DONE, 0 remaining. (`D3a` pins the exact
+condition string and the root skip; `D3b` and `D9b` were appended in the
+fixes round.)
 
 Script-content behaviors (D3–D5) are asserted on the shipped JS source
 string: pure-Dart, deterministic, no JS runtime needed. D3/D4 compare

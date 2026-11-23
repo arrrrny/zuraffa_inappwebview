@@ -96,6 +96,10 @@ class IosWebviewPort implements WebviewPort {
     return _decodeBytes(result?['data']);
   }
 
+  /// Decodes a byte payload, keeping every rejection inside the typed
+  /// taxonomy: a non-list, a non-integer element (JSON `1.5`, a base64
+  /// chunk, a null from a half-implemented native shell) is a
+  /// `malformed_response`, never a raw `TypeError`.
   List<int>? _decodeBytes(Object? raw) {
     if (raw == null) return null;
     if (raw is! List) {
@@ -105,7 +109,18 @@ class IosWebviewPort implements WebviewPort {
         recoverable: false,
       );
     }
-    return [for (final b in raw) b as int];
+    final bytes = <int>[];
+    for (final value in raw) {
+      if (value is! int) {
+        throw const IosWebviewException(
+          'malformed_response',
+          'The capture result carried a non-integer byte value.',
+          recoverable: false,
+        );
+      }
+      bytes.add(value);
+    }
+    return bytes;
   }
 
   @override
@@ -169,6 +184,57 @@ class IosWebviewPort implements WebviewPort {
   }
 
   @override
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) async {
+    await channel.call('loadHtml', {
+      'id': id,
+      'html': html,
+      if (baseUrl != null) 'baseUrl': baseUrl,
+    });
+  }
+
+  @override
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) async {
+    await channel.call('setCaptureEnabled', {
+      'id': id,
+      'enabled': enabled,
+      if (filter != null) ...filter.toChannelArgs(),
+    });
+  }
+
+  @override
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) {
+    final source = channel.eventSource;
+    if (source == null) {
+      return Stream.error(const IosWebviewException(
+        'channel_not_wired',
+        'No event source was injected — pass one to the channel to '
+        'subscribe to capture events.',
+        recoverable: false,
+      ));
+    }
+    return source('captureEvents').asyncMap((raw) {
+      if (raw is! Map) {
+        throw const IosWebviewException(
+          'malformed_response',
+          'A capture event carried a non-map payload.',
+          recoverable: false,
+        );
+      }
+      return Map<String, Object?>.from(raw);
+    }).where((map) => map['id'] == id).map(
+          WebviewCaptureEntry.fromChannelArgs,
+        );
+  }
+
+  @override
   Future<void> setCookie(WebviewCookie cookie) async {
     await channel.call('setCookie', cookie.toChannelArgs());
   }
@@ -185,10 +251,27 @@ class IosWebviewPort implements WebviewPort {
         recoverable: false,
       );
     }
-    return [
-      for (final entry in raw)
-        WebviewCookie.fromChannelArgs(Map<String, Object?>.from(entry as Map)),
-    ];
+    final cookies = <WebviewCookie>[];
+    for (final entry in raw) {
+      if (entry is! Map) {
+        throw const IosWebviewException(
+          'malformed_response',
+          'The getCookies result carried a non-map cookie entry.',
+          recoverable: false,
+        );
+      }
+      try {
+        cookies.add(WebviewCookie.fromChannelArgs(
+            Map<String, Object?>.from(entry)));
+      } on Object catch (error) {
+        throw IosWebviewException(
+          'malformed_response',
+          'A cookie entry could not be decoded: $error',
+          recoverable: false,
+        );
+      }
+    }
+    return cookies;
   }
 
   @override

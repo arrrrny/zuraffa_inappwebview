@@ -9,9 +9,9 @@
 
 ## Phase 2: Adapters (identical ×3)
 
-- [x] T003 `[TDD]` (US3, S3) android adapter: method/args forwarding, `data` decode, `malformed_response`, null passthrough — `android_webview_port.dart` + test
-- [x] T004 `[TDD]` (US3, S3) ios adapter — `ios_webview_port.dart` + test
-- [x] T005 `[TDD]` (US3, S3) macos adapter — `macos_webview_port.dart` + test
+- [x] T003 `[TDD]` (US3, S6a) android adapter: method/args forwarding, `data` decode, `malformed_response`, null passthrough — `android_webview_port.dart` + test
+- [x] T004 `[TDD]` (US3, S6b) ios adapter — `ios_webview_port.dart` + test
+- [x] T005 `[TDD]` (US3, S6c) macos adapter — `macos_webview_port.dart` + test
 
 ## Phase 3: Wiring (non-behavior)
 

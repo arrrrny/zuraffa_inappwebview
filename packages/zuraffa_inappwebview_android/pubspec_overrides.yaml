@@ -1,0 +1,8 @@
+# Committed so a clean checkout resolves the monorepo siblings locally.
+# pub never publishes this file; see PUBLISH.md and scripts/restore_dev_setup.sh.
+dependency_overrides:
+  zuraffa_inappwebview:
+    path: ../zuraffa_inappwebview
+  zuraffa_inappwebview_platform:
+    path: ../zuraffa_inappwebview_platform
+  xml: 7.1.0

@@ -36,6 +36,17 @@ void main() {
         }),
         isNull,
       );
+      expect(
+        WebviewNavigationEvent.fromChannelArgs(const {
+          'url': 'https://x.dev/',
+        }),
+        isNull,
+      );
+      expect(
+        WebviewNavigationEvent.phaseOf('completed'),
+        WebviewNavigationPhase.completed,
+      );
+      expect(WebviewNavigationEvent.phaseOf('loading'), isNull);
     });
 
     test('N1: wrong-typed fields -> typed malformed_response', () {
@@ -179,6 +190,46 @@ void main() {
       await controller.close();
     });
 
+    test('N9: record is capped at maxEntries, oldest dropped first', () {
+      final tracker = NavigationTracker(maxEntries: 4);
+      for (final url in [
+        'https://a.dev/',
+        'https://b.dev/',
+        'https://c.dev/',
+        'https://d.dev/',
+        'https://e.dev/',
+      ]) {
+        tracker.handleEvent(
+            'w', _ev(WebviewNavigationPhase.completed, url));
+      }
+      final urls = tracker.entries('w').map((v) => v.url).toList();
+      expect(urls, [
+        'https://b.dev/',
+        'https://c.dev/',
+        'https://d.dev/',
+        'https://e.dev/',
+      ]);
+      // The dropped url's count went with it, so a revisit of it is a fresh
+      // visit rather than a phantom cycle.
+      expect(tracker.hasCycle('w'), isFalse);
+    });
+
+    test('N6: hasCycle stays true across a re-visit after the cap', () {
+      final tracker = NavigationTracker(maxEntries: 3);
+      for (final url in [
+        'https://a.dev/',
+        'https://b.dev/',
+        'https://a.dev/',
+      ]) {
+        tracker.handleEvent(
+            'w', _ev(WebviewNavigationPhase.completed, url));
+      }
+      expect(tracker.hasCycle('w'), isTrue);
+      tracker.handleEvent(
+          'w', _ev(WebviewNavigationPhase.completed, 'https://b.dev/'));
+      expect(tracker.hasCycle('w'), isTrue);
+    });
+
     test('N8: clear(id) drops one record; dispose() drops all + unsubscribes',
         () async {
       final controller = StreamController<WebviewNavigationEvent>();
@@ -204,6 +255,31 @@ void main() {
       controller.add(_ev(WebviewNavigationPhase.completed, 'https://d.dev/'));
       await pump();
       expect(tracker.entries('w'), isEmpty);
+      await controller.close();
+    });
+
+    test('N6b: stream errors are captured; clear + dispose', () async {
+      final controller = StreamController<WebviewNavigationEvent>();
+      final tracker = NavigationTracker();
+      tracker.attach('w', controller.stream);
+      controller.add(
+          _ev(WebviewNavigationPhase.completed, 'https://a.dev/'));
+      await pump();
+      expect(tracker.entries('w'), hasLength(1));
+
+      controller.addError(const WebviewException(
+        'channel_not_wired',
+        'no event source',
+        recoverable: false,
+      ));
+      await pump();
+      expect(tracker.error('w'), isA<WebviewException>());
+
+      tracker.clear('w');
+      expect(tracker.entries('w'), isEmpty);
+      expect(tracker.error('w'), isA<WebviewException>());
+
+      tracker.dispose();
       await controller.close();
     });
   });
@@ -271,6 +347,23 @@ class _StreamFakePort implements WebviewPort {
   Stream<WebviewNavigationEvent> navigationEvents({required String id}) =>
       events;
 
+  @override
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) async {}
+
+  @override
+  Future<void> setCaptureEnabled({
+    required String id,
+    required bool enabled,
+    WebviewCaptureFilter? filter,
+  }) async {}
+
+  @override
+  Stream<WebviewCaptureEntry> captureEvents({required String id}) =>
+      const Stream.empty();
   @override
   Future<void> setCookie(WebviewCookie cookie) async {}
 
