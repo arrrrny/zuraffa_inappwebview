@@ -1,23 +1,27 @@
 /// Canonical dialogue dismissal for clean captures (spec 002).
 ///
-/// Removes fixed/sticky overlays (cookie banners, chat widgets, sticky
-/// navbars) from the top-level document and resets overflow/margin so
-/// screenshots and PDF exports carry no scrollbar artifacts. Pure Dart —
-/// the script is a payload evaluated through the existing
-/// `evaluateJavascript` port op, so no new channel contract is needed.
+/// Hides fixed/sticky overlays (cookie banners, chat widgets, sticky
+/// navbars) in the top-level document and resets overflow/margin so
+/// screenshots and PDF exports carry no scrollbar artifacts. Hiding is
+/// reversible — unlike removal it cannot erase a content-bearing container
+/// (an SPA root is often `position: fixed`). Pure Dart — the script is a
+/// payload evaluated through the existing `evaluateJavascript` port op, so
+/// no new channel contract is needed.
 library;
 
-/// The canonical overlay-removal script.
+/// The canonical overlay-hiding script.
 ///
-/// Contract (spec 002, FR-2/FR-6): removes every element whose computed
-/// position is `fixed` or `sticky` except the two document roots —
-/// `documentElement` and `body` may legitimately be `fixed` themselves (the
-/// common `body { position: fixed }` scroll-lock used behind modals), and
-/// removing them would blank the page while still reporting `removed > 0`.
+/// Contract (spec 002, FR-2/FR-6): hides every element whose computed
+/// position is `fixed` or `sticky` (`display: none`, so a retry can still
+/// restore them) except the two document roots — `documentElement` and
+/// `body` may legitimately be `fixed` themselves (the common
+/// `body { position: fixed }` scroll-lock used behind modals), and hiding
+/// them would blank the page while still reporting a positive count.
 /// Resets `overflow`/`margin` on those roots instead, touches only the
 /// top-level document, and never throws — the whole body is guarded,
-/// returning the removed count. Matches are collected before any removal so
-/// `getComputedStyle` is not interleaved with DOM mutations.
+/// returning the count of elements taken out of the capture. Matches are
+/// collected before any style mutation so `getComputedStyle` is not
+/// interleaved with the mutations it would observe.
 class DialogueDismissScript {
   const DialogueDismissScript._();
 
@@ -34,7 +38,7 @@ class DialogueDismissScript {
       if (pos === 'fixed' || pos === 'sticky') doomed.push(el);
     }
     for (var k = 0; k < doomed.length; k++) {
-      doomed[k].remove();
+      doomed[k].style.setProperty('display', 'none');
       removed++;
     }
     var roots = [document.documentElement, document.body];

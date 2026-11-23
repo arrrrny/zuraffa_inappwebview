@@ -65,7 +65,7 @@ class WebviewSettings {
   final bool supportZoom;
   final Duration loadTimeout;
 
-  /// Removes fixed/sticky overlays (dialogue banners) after load for clean
+  /// Hides fixed/sticky overlays (dialogue banners) after load for clean
   /// captures — off by default; the native side may also honor it (spec 002).
   final bool dismissDialogues;
 
@@ -81,37 +81,34 @@ class WebviewSettings {
   });
 
   Map<String, Object?> toChannelArgs() => {
-    if (userAgent != null) 'userAgent': userAgent,
-    'javaScriptEnabled': javaScriptEnabled,
-    'incognito': incognito,
-    'transparentBackground': transparentBackground,
-    'mediaPlaybackRequiresUserGesture': mediaPlaybackRequiresUserGesture,
-    'supportZoom': supportZoom,
-    'loadTimeoutMs': loadTimeout.inMilliseconds,
-    'dismissDialogues': dismissDialogues,
-  };
+        if (userAgent != null) 'userAgent': userAgent,
+        'javaScriptEnabled': javaScriptEnabled,
+        'incognito': incognito,
+        'transparentBackground': transparentBackground,
+        'mediaPlaybackRequiresUserGesture': mediaPlaybackRequiresUserGesture,
+        'supportZoom': supportZoom,
+        'loadTimeoutMs': loadTimeout.inMilliseconds,
+        'dismissDialogues': dismissDialogues,
+      };
 }
 
 /// Screenshot pixel format (spec 003).
 enum ScreenshotFormat { png, jpeg }
 
 /// Capture configuration for `takeScreenshot` (spec 003): format and JPEG
-/// quality (1–100, only meaningful for jpeg). Rect capture is a follow-up.
+/// quality (1–100, only meaningful for jpeg). [quality] is clamped to that
+/// range on construction. Rect capture is a follow-up.
 class ScreenshotConfiguration {
   final ScreenshotFormat format;
   final int quality;
 
-  /// [quality] is clamped to the documented 1–100 range, so an
-  /// out-of-range value can never reach the platform.
   const ScreenshotConfiguration({
     this.format = ScreenshotFormat.png,
     int quality = 100,
   }) : quality = quality < 1 ? 1 : (quality > 100 ? 100 : quality);
 
-  Map<String, Object?> toChannelArgs() => {
-    'format': format.name,
-    'quality': quality,
-  };
+  Map<String, Object?> toChannelArgs() =>
+      {'format': format.name, 'quality': quality};
 
   @override
   bool operator ==(Object other) =>
@@ -142,23 +139,25 @@ class WebviewCookie {
     this.secure = false,
   });
 
-  WebviewCookie copyWith({String? value, DateTime? expiresAt}) => WebviewCookie(
-    name: name,
-    value: value ?? this.value,
-    domain: domain,
-    path: path,
-    expiresAt: expiresAt ?? this.expiresAt,
-    secure: secure,
-  );
+  WebviewCookie copyWith({String? value, DateTime? expiresAt}) =>
+      WebviewCookie(
+        name: name,
+        value: value ?? this.value,
+        domain: domain,
+        path: path,
+        expiresAt: expiresAt ?? this.expiresAt,
+        secure: secure,
+      );
 
   Map<String, Object?> toChannelArgs() => {
-    'name': name,
-    'value': value,
-    if (domain != null) 'domain': domain,
-    'path': path,
-    if (expiresAt != null) 'expiresAtMs': expiresAt!.millisecondsSinceEpoch,
-    'secure': secure,
-  };
+        'name': name,
+        'value': value,
+        if (domain != null) 'domain': domain,
+        'path': path,
+        if (expiresAt != null)
+          'expiresAtMs': expiresAt!.millisecondsSinceEpoch,
+        'secure': secure,
+      };
 
   static WebviewCookie fromChannelArgs(Map<String, Object?> args) =>
       WebviewCookie(

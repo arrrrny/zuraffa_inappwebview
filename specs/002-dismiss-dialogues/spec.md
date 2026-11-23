@@ -58,17 +58,18 @@ alone does nothing on the Dart side.
 
 **Independent Test**: Drive a fake port that records `evaluateJavascript`
 sources; assert the shipped script is evaluated on the right id and that the
-script source removes fixed/sticky elements and resets overflow/margin.
+script source hides fixed/sticky elements and resets overflow/margin.
 
 **Acceptance Scenarios**:
 
 1. **Given** a created headless webview, **When** `dismissDialogues(id)` is
    called, **Then** the port receives one `evaluateJavascript` call whose
    source is the canonical `DialogueDismissScript.source`.
-2. **Given** the canonical script, **When** inspected, **Then** it removes
+2. **Given** the canonical script, **When** inspected, **Then** it hides
    `position: fixed`/`position: sticky` elements other than
-   `documentElement`/`body`, resets `documentElement`/`body` overflow and
-   margin, and touches only the top-level document (no iframe recursion).
+   `documentElement`/`body` (`display: none`, so a retry can still restore
+   them), resets `documentElement`/`body` overflow and margin, and touches
+   only the top-level document (no iframe recursion).
 3. **Given** an id that was never created, **When** `dismissDialogues(id)` is
    called, **Then** it throws the typed `not_created` failure.
 4. **Given** the port raises a JS evaluation error for the dismissal call,
@@ -106,11 +107,12 @@ port received exactly `attempts` evaluations.
 - **FR-1**: `WebviewSettings` gains `dismissDialogues` (bool, default
   `false`), serialized in `toChannelArgs()` as `dismissDialogues`.
 - **FR-2**: A pure-Dart canonical script (`DialogueDismissScript.source`)
-  removes top-level `position: fixed`/`position: sticky` elements — except
-  the document roots `documentElement` and `body` — and resets
-  `overflow`/`margin` on those two roots. Neither root is ever removed:
-  either may legitimately compute to `fixed`, and removing it would blank
-  the page while still reporting a positive removed count.
+  hides top-level `position: fixed`/`position: sticky` elements — except
+  the document roots `documentElement` and `body` — with `display: none`,
+  so the change is reversible, and resets `overflow`/`margin` on those two
+  roots. Neither root is ever hidden: either may legitimately compute to
+  `fixed`, and hiding it would blank the page while still reporting a
+  positive count.
 - **FR-3**: `WebviewService.dismissDialogues({id, policy})` evaluates the
   canonical script through the port, once per policy attempt, with the
   policy delay between attempts.

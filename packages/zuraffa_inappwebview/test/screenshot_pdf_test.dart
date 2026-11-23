@@ -39,7 +39,8 @@ class CaptureFakePort implements WebviewPort {
   Future<Object?> evaluateJavascript({
     required String id,
     required String source,
-  }) async => null;
+  }) async =>
+      null;
 
   @override
   Future<String?> getHtml({required String id}) async => null;
@@ -92,7 +93,8 @@ class CaptureFakePort implements WebviewPort {
     required String name,
     String? domain,
     String path = '/',
-  }) async => false;
+  }) async =>
+      false;
 
   @override
   Future<void> deleteAllCookies() async {}
@@ -101,10 +103,10 @@ class CaptureFakePort implements WebviewPort {
 void main() {
   group('US2 — configuration', () {
     test('S1: defaults png/100; jpeg/80 overrides', () {
-      expect(const ScreenshotConfiguration().toChannelArgs(), {
-        'format': 'png',
-        'quality': 100,
-      });
+      expect(
+        const ScreenshotConfiguration().toChannelArgs(),
+        {'format': 'png', 'quality': 100},
+      );
       expect(
         const ScreenshotConfiguration(
           format: ScreenshotFormat.jpeg,
@@ -114,14 +116,18 @@ void main() {
       );
     });
 
-    test('S7: quality clamps to the documented 1–100 range', () {
-      expect(const ScreenshotConfiguration(quality: 0).quality, 1);
-      expect(const ScreenshotConfiguration(quality: -5).quality, 1);
-      expect(const ScreenshotConfiguration(quality: 101).quality, 100);
-      expect(const ScreenshotConfiguration(quality: 80).quality, 80);
+    test('S1: quality is clamped to 1–100', () {
       expect(
-        const ScreenshotConfiguration(quality: 400).toChannelArgs()['quality'],
-        100,
+        const ScreenshotConfiguration(quality: 500).toChannelArgs(),
+        {'format': 'png', 'quality': 100},
+      );
+      expect(
+        const ScreenshotConfiguration(quality: 0).toChannelArgs(),
+        {'format': 'png', 'quality': 1},
+      );
+      expect(
+        const ScreenshotConfiguration(quality: -3).toChannelArgs(),
+        {'format': 'png', 'quality': 1},
       );
     });
   });
@@ -166,11 +172,8 @@ void main() {
         expect(
           call,
           throwsA(
-            isA<WebviewException>().having(
-              (e) => e.code,
-              'code',
-              'not_created',
-            ),
+            isA<WebviewException>()
+                .having((e) => e.code, 'code', 'not_created'),
           ),
         );
       }
@@ -183,21 +186,15 @@ void main() {
       expect(
         () => port.takeScreenshot(id: 'w'),
         throwsA(
-          isA<WebviewException>().having(
-            (e) => e.code,
-            'code',
-            'port_not_wired',
-          ),
+          isA<WebviewException>()
+              .having((e) => e.code, 'code', 'port_not_wired'),
         ),
       );
       expect(
         () => port.exportPdf(id: 'w'),
         throwsA(
-          isA<WebviewException>().having(
-            (e) => e.code,
-            'code',
-            'port_not_wired',
-          ),
+          isA<WebviewException>()
+              .having((e) => e.code, 'code', 'port_not_wired'),
         ),
       );
     });

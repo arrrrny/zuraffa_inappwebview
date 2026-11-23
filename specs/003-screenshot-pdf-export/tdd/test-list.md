@@ -2,7 +2,7 @@
 
 | ID | Behavior | Task | Status |
 |---|---|---|---|
-| S1 | `ScreenshotConfiguration` defaults png/100, serializes `{format, quality}`; jpeg/80 overrides | T001 | DONE |
+| S1 | `ScreenshotConfiguration` defaults png/100, serializes `{format, quality}`; jpeg/80 overrides; `quality` clamps to 1–100 | T001 | DONE |
 | S2 | service `takeScreenshot`/`exportPdf` pass bytes through unchanged | T002 | DONE |
 | S3 | null port result → null service result (no throw) | T002 | DONE |
 | S4 | unknown id → typed `not_created` (both ops) | T002 | DONE |
