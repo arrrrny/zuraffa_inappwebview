@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:test/test.dart';
 import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
@@ -22,7 +24,7 @@ const String _goldenDismissSource = '''
       if (pos === 'fixed' || pos === 'sticky') doomed.push(el);
     }
     for (var k = 0; k < doomed.length; k++) {
-      doomed[k].remove();
+      doomed[k].style.setProperty('display', 'none');
       removed++;
     }
     var roots = [document.documentElement, document.body];
@@ -179,21 +181,17 @@ void main() {
   group('US2 — canonical script', () {
     final source = DialogueDismissScript.source;
 
-    test('D3: removes computed fixed/sticky elements', () {
-      expect(source, contains('getComputedStyle'));
-      expect(source, contains('fixed'));
-      expect(source, contains('sticky'));
-      expect(source, contains('.remove()'));
-      // The exact condition is pinned: a substring test alone would accept
-      // a no-op dismisser (`pos === "fixed" && pos === "sticky"`).
-      expect(source, contains("pos === 'fixed' || pos === 'sticky'"));
-    });
-
-    test('D3 golden: canonical source is pinned to the shipped copy', () {
+    test('D3: canonical source is pinned (hiding contract, golden)', () {
       expect(_normalizeSource(source), _normalizeSource(_goldenDismissSource));
     });
 
-    test('D3b: the document roots are never removed', () {
+    test('D3a: the fixed/sticky condition and root skip are pinned', () {
+      expect(source, contains('getComputedStyle'));
+      expect(source, contains('fixed'));
+      expect(source, contains('sticky'));
+      // The exact condition is pinned: a substring test alone would accept
+      // a no-op dismisser (`pos === "fixed" && pos === "sticky"`).
+      expect(source, contains("pos === 'fixed' || pos === 'sticky'"));
       expect(
         source,
         contains(
@@ -201,6 +199,11 @@ void main() {
           'continue;',
         ),
       );
+    });
+
+    test('D3b: hiding is reversible — no element is removed', () {
+      expect(source, contains("setProperty('display', 'none')"));
+      expect(source, isNot(contains('.remove()')));
     });
 
     test('D4: resets overflow/margin on documentElement and body', () {
@@ -215,6 +218,35 @@ void main() {
       expect(source, isNot(contains('iframe')));
       expect(source, isNot(contains('contentWindow')));
     });
+
+    test(
+      'D3/D4: the payload removes fixed/sticky overlays and resets the roots',
+      () async {
+        final dir = Directory.systemTemp.createTempSync('dialogue-dismiss');
+        addTearDown(() => dir.deleteSync(recursive: true));
+        final harness = File('${dir.path}/harness.js')
+          ..writeAsStringSync(
+            _harness.replaceFirst('__SCRIPT__', DialogueDismissScript.source),
+          );
+
+        final result = Process.runSync(_nodePath!, [harness.path]);
+        expect(result.exitCode, 0, reason: 'node failed: ${result.stderr}');
+        final out =
+            jsonDecode(result.stdout as String) as Map<String, Object?>;
+
+        expect(out['removed'], 2);
+        expect(out['fixedRemoved'], isTrue);
+        expect(out['stickyRemoved'], isTrue);
+        expect(out['staticRemoved'], isFalse);
+        // the roots started dirty and came back cleared, proving the
+        // payload reset them rather than merely leaving them alone
+        expect(out['rootOverflow'], '');
+        expect(out['rootMargin'], '');
+        expect(out['bodyOverflow'], '');
+        expect(out['bodyMargin'], '');
+      },
+      skip: _nodePath == null ? 'node is not installed' : false,
+    );
   });
 
   group('US3 — policy', () {
@@ -276,5 +308,58 @@ void main() {
         isTrue,
       );
     });
+
+    test('D11: Error subtypes during dismissal are swallowed too', () async {
+      port.evaluateHook = (_) => throw StateError('boom');
+      await service.dismissDialogues(id: 'scraper');
+      expect(port.evaluated, hasLength(1));
+    });
   });
 }
+
+/// Behavioral harness (spec 002, US2): a minimal DOM — one `fixed`, one
+/// `sticky` and one `static` node, plus roots whose overflow/margin start
+/// dirty — for executing the payload under a real JS engine. A payload
+/// with a wrong operator, an early `return` or a missing `remove()` fails
+/// the assertions that read this output.
+const String _harness = r'''
+const elements = [
+  {id: 'fixed', position: 'fixed'},
+  {id: 'sticky', position: 'sticky'},
+  {id: 'static', position: 'static'},
+];
+for (const el of elements) {
+  el.hidden = false;
+  el.style = {
+    setProperty: (name, value) => {
+      if (name === 'display' && value === 'none') el.hidden = true;
+    },
+  };
+}
+const documentElement = {style: {overflow: 'scroll', margin: 'scroll'}};
+const body = {style: {overflow: 'hidden', margin: '8px'}};
+const document = {
+  querySelectorAll: () => elements,
+  documentElement: documentElement,
+  body: body,
+};
+const window = {getComputedStyle: (el) => ({position: el.position})};
+const removed = __SCRIPT__;
+console.log(JSON.stringify({
+  removed: removed,
+  fixedRemoved: elements[0].hidden,
+  stickyRemoved: elements[1].hidden,
+  staticRemoved: elements[2].hidden,
+  rootOverflow: documentElement.style.overflow,
+  rootMargin: documentElement.style.margin,
+  bodyOverflow: body.style.overflow,
+  bodyMargin: body.style.margin,
+}));
+''';
+
+/// `node`, or null when no engine is on PATH (the behavioral test skips).
+final String? _nodePath = () {
+  final which = Process.runSync('which', ['node']);
+  if (which.exitCode != 0) return null;
+  return (which.stdout as String).trim();
+}();

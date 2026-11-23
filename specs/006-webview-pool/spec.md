@@ -68,8 +68,8 @@ id reuse and create counts.
 
 ### User Story 3 - Caps and eviction (Priority: P2)
 
-The pool enforces `maxLive` (total held instances, platform-aware default
-8) and `maxPerDomain`. On acquire past `maxLive`, idle instances are
+The pool enforces `maxLive` (total held instances, default 8, overridable per
+pool) and `maxPerDomain`. On acquire past `maxLive`, idle instances are
 evicted least-idle-first; when every instance is live (active), acquire
 fails with the typed `pool_exhausted`. Idle instances older than `idleTtl`
 (2 min default) are swept lazily on acquire (injectable clock).

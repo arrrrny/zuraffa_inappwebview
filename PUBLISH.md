@@ -19,7 +19,7 @@
 - **Pre-publish**: `./scripts/prepare_for_publish.sh <version>` — creates `publish-<version>` branch, bumps all package versions + in-family constraints, propagates the root CHANGELOG entry into each package, commits
 - **Publish**: `./scripts/publish.sh` — dry-run + publish per package in order, retries pub.dev's new-package rate limit with backoff (spaces the first publishes of a fresh family), waits for pub.dev propagation (needs flutter/dart on PATH)
 - **Post-publish**: `./scripts/push_to_master.sh -f` — merges the publish branch to master, tags, pushes, deletes the branch
-- **Restore dev**: not needed — `dependency_overrides` are stripped by pub on publish; nothing to convert back
+- **Restore dev**: not needed — `dependency_overrides` are stripped by pub on publish; nothing to convert back. The adapters commit a `pubspec_overrides.yaml` pointing the in-family packages at their `packages/` siblings, so a clean checkout resolves this tree; the file is never archived, so publish still ships the hosted constraints.
 
 ## Workflow
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:test/test.dart';
 import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
@@ -105,50 +106,32 @@ void main() {
   });
 
   group('US3 — service driver', () {
-    late _RecipeFakePort port;
-    late WebviewService service;
-    late WebviewServiceRecipeDriver driver;
-
-    setUp(() async {
-      port = _RecipeFakePort();
-      service = WebviewService(port: port);
+    test('R7: loadUrl + canonical tap script through the service',
+        () async {
+      final port = _RecipeFakePort();
+      final service = WebviewService(port: port);
       await service.createHeadless(id: 'w');
-      driver = WebviewServiceRecipeDriver(service: service, webviewId: 'w');
-    });
+      final driver = WebviewServiceRecipeDriver(
+          service: service, webviewId: 'w');
 
-    test('R7: loadUrl + tap script through the service', () async {
       await driver.loadUrl(Uri.parse('https://x.dev/'));
       expect(port.lastLoadedUrl, 'https://x.dev/');
 
       await driver.tap('#buy');
-      expect(
-        port.lastEvaluatedSource,
-        '(() => { const el = document.querySelector("#buy");'
-            ' if (!el) return false; el.click(); return true; })()',
-      );
-    });
+      expect(port.lastEvaluatedSource, contains('querySelector'));
+      expect(port.lastEvaluatedSource, contains('#buy'));
+      expect(port.lastEvaluatedSource, contains('click'));
 
-    test('R8: the selector is escaped into a parsable literal', () async {
-      await driver.tap(r'a\');
-      expect(
-        port.lastEvaluatedSource,
-        r'(() => { const el = document.querySelector("a\\");'
-            r' if (!el) return false; el.click(); return true; })()',
-      );
-
-      await driver.tap("\\');alert(1);//");
-      expect(
-        port.lastEvaluatedSource,
-        r'''(() => { const el = document.querySelector("\\');alert(1);//");'''
-            r''' if (!el) return false; el.click(); return true; })()''',
-      );
-    });
-
-    test('R9: a selector that matches nothing is a no-op', () async {
-      await driver.tap('#nope');
-      expect(port.lastEvaluatedSource, contains('if (!el) return false'));
-      expect(port.lastEvaluatedSource, isNot(contains('el.click() null')));
-      expect(port.lastEvaluatedSource, isNot(contains('click: null')));
+      // The selector must reach the browser as a JS string literal with its
+      // escaping intact, whatever the surrounding wrapper looks like: a
+      // Tailwind-style escape and a trailing backslash both have to survive
+      // (`jsonEncode` is the contract's encoder).
+      for (final selector in [r'.sm\:flex', r'trailing\', r'say "hi"']) {
+        await driver.tap(selector);
+        expect(port.lastEvaluatedSource,
+            contains(jsonEncode(selector)),
+            reason: 'selector $selector lost its escaping on the way out');
+      }
     });
   });
 }

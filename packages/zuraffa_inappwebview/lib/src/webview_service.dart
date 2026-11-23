@@ -80,6 +80,11 @@ class WebviewService {
 
   /// Captures the rendered page as image bytes; null when the platform
   /// could not capture (spec 003).
+  ///
+  /// Gated on `created`, not `running` (FR-1): capture is legal on a
+  /// webview that was created but never `runHeadless`-ed. What that yields
+  /// is platform-defined — a blank page on some platforms — so a caller
+  /// that wants the rendered document must run the webview first.
   Future<List<int>?> takeScreenshot({
     required String id,
     ScreenshotConfiguration? config,
@@ -89,6 +94,10 @@ class WebviewService {
   }
 
   /// Exports the rendered page as PDF bytes; null on failure (spec 003).
+  ///
+  /// Same `created`-not-`running` gate as [takeScreenshot]: export of a
+  /// never-run webview is platform-defined. Run it first for the rendered
+  /// document.
   Future<List<int>?> exportPdf({required String id}) {
     _requireCreated(id);
     return port.exportPdf(id: id);
@@ -110,9 +119,9 @@ class WebviewService {
     return port.navigationEvents(id: id);
   }
 
-  /// Removes fixed/sticky overlays from the loaded page for clean captures
-  /// (spec 002). Best-effort by contract: port errors during dismissal are
-  /// swallowed and never break the caller's flow.
+  /// Hides fixed/sticky overlays from the loaded page for clean captures
+  /// (spec 002). Best-effort by contract: anything the port raises during
+  /// dismissal is swallowed and never breaks the caller's flow.
   Future<void> dismissDialogues({
     required String id,
     DialogueDismissPolicy policy = const DialogueDismissPolicy(),
@@ -127,10 +136,10 @@ class WebviewService {
           id: id,
           source: DialogueDismissScript.source,
         );
-      } on Object {
-        // FR-5: dismissal is best-effort — a page-level JS failure must not
-        // propagate. `Error`s (StateError/TypeError from a mis-wired port)
-        // count too, not just `Exception`s.
+      } catch (_) {
+        // FR-5: dismissal is best-effort — neither an `Exception` nor an
+        // `Error` (a `TypeError` out of an adapter decode path, a
+        // `StateError`) may propagate.
       }
     }
   }
@@ -247,6 +256,10 @@ class UnwiredWebviewPort implements WebviewPort {
   @override
   Future<List<int>?> exportPdf({required String id}) => _unwired();
 
+  /// One deliberate asymmetry with the adapters: those surface
+  /// `channel_not_wired` as a `Stream.error`, this placeholder throws
+  /// synchronously — the service's `_requireCreated` style, so an unwired
+  /// port fails fast at the call site instead of on `listen`.
   @override
   Future<void> loadHtml({
     required String id,
