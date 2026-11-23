@@ -9,18 +9,15 @@ import 'webview_types.dart';
 /// consistent per mission and stops parallel missions from leaking
 /// webviews. Released instances stay warm (idle) and are reused by the
 /// next session on the same registrable domain (eTLD+1 approximation:
-/// last two host labels).
-///
-/// Reuse resets the instance first: it is navigated to `about:blank`, so
-/// the previous mission's URL, DOM and JS heap do not leak into the next
-/// one. The platform cookie store is global and is *not* reset. An
-/// instance's domain is the acquire-time affinity hint — the pool never
-/// observes navigation, so it is not re-derived — and it survives the
-/// reset, so a warm instance keeps serving the domain whose mission
-/// created it.
-///
+/// last two host labels); a reused instance is navigated to `about:blank`
+/// first so it never carries the previous mission's document or JS state.
 /// Caps and TTL keep the pool memory-safe; expiry is swept lazily on
 /// acquire (no Flutter lifecycle dependency).
+///
+/// [acquire] is serialised on an internal gate: the pool caps and the
+/// session→instance mapping are checked and mutated with no interleaving
+/// `await` in between, so concurrent acquires can neither double-create an
+/// instance for one session nor overshoot [maxLive].
 class WebviewPool {
   final WebviewService service;
   final WebviewSettings settings;
@@ -31,6 +28,7 @@ class WebviewPool {
 
   final List<_PooledInstance> _held = [];
   int _counter = 0;
+  Future<void> _gate = Future<void>.value();
 
   WebviewPool({
     required this.service,
@@ -50,18 +48,34 @@ class WebviewPool {
           if (i.session != null) i.session!,
       };
 
+  /// Whether [sessionId] currently holds an instance. Tools use this to
+  /// reject an unknown (typo'd or already-released) session with a typed
+  /// failure instead of silently acquiring a blank instance for it.
+  bool hasSession(String sessionId) => _instanceFor(sessionId) != null;
+
   /// Returns the webview id for [sessionId], creating+running a fresh
   /// headless instance on first acquire. Same session always maps to the
   /// same instance; a warm idle instance on the same registrable domain
-  /// (from [domainHint]) is reset to `about:blank` and reused across
-  /// sessions.
-  Future<String> acquire(String sessionId, {String? domainHint}) async {
+  /// (from [domainHint]) is reused across sessions.
+  ///
+  /// Concurrent calls are serialised — see the class doc.
+  Future<String> acquire(String sessionId, {String? domainHint}) {
+    final result = _gate.then((_) => _acquireNow(sessionId, domainHint));
+    _gate = result.then<void>((_) {}, onError: (Object _) {});
+    return result;
+  }
+
+  Future<String> _acquireNow(String sessionId, String? domainHint) async {
     await _sweepExpired();
-    final active = _instanceFor(sessionId);
-    if (active != null) return active.webviewId;
 
     final domain =
         domainHint == null ? null : registrableDomain(domainHint);
+    final active = _instanceFor(sessionId);
+    if (active != null) {
+      if (domain != null) active.domain = domain;
+      return active.webviewId;
+    }
+
     if (domain != null) {
       for (final i in _held) {
         if (i.session == null && i.domain == domain) {
@@ -70,8 +84,26 @@ class WebviewPool {
             url: WebviewUri('about:blank'),
           );
           i.session = sessionId;
+          i.idleSince = clock();
           return i.webviewId;
         }
+      }
+    }
+
+    // The reuse loop above already claimed any idle same-domain instance,
+    // so every same-domain instance left is active: eviction cannot help
+    // and the acquire genuinely exceeds the per-domain cap. Checked BEFORE
+    // the maxLive eviction so an acquire that is going to fail leaves the
+    // pool untouched instead of first destroying another domain's idle.
+    if (domain != null) {
+      final sameDomain = _held.where((i) => i.domain == domain).length;
+      if (sameDomain >= maxPerDomain) {
+        throw WebviewException(
+          'pool_exhausted',
+          'Domain "$domain" already holds $maxPerDomain live instances — '
+          'release one before acquiring.',
+          recoverable: true,
+        );
       }
     }
 
@@ -88,26 +120,14 @@ class WebviewPool {
       await _dispose(idle);
     }
 
-    if (domain != null) {
-      final sameDomain = _held.where((i) => i.domain == domain).length;
-      if (sameDomain >= maxPerDomain) {
-        final idle = _idlest(
-          _held.where((i) => i.session == null && i.domain == domain),
-        );
-        if (idle == null) {
-          throw WebviewException(
-            'pool_exhausted',
-            'Domain "$domain" already holds $maxPerDomain live instances.',
-            recoverable: true,
-          );
-        }
-        await _dispose(idle);
-      }
-    }
-
     final id = 'pool-${++_counter}';
     await service.createHeadless(id: id, settings: settings);
-    await service.runHeadless(id: id);
+    try {
+      await service.runHeadless(id: id);
+    } on Object {
+      await _disposeUnstarted(id);
+      rethrow;
+    }
     _held.add(_PooledInstance(
       webviewId: id,
       domain: domain,
@@ -134,12 +154,33 @@ class WebviewPool {
   }
 
   /// eTLD+1 approximation: the last two host labels (`shop.x.dev` →
-  /// `x.dev`). Single-label hosts map to themselves. Multi-part TLDs
-  /// (co.uk) are a documented follow-up.
+  /// `x.dev`). Single-label hosts map to themselves. IP literals are
+  /// returned verbatim — the last-two-labels rule would collapse
+  /// `127.0.0.1` and `10.0.0.1` onto one bucket and hand an unrelated
+  /// host a warm instance. Multi-part TLDs (co.uk) are a documented
+  /// follow-up.
   static String registrableDomain(String host) {
     final labels = host.split('.');
     if (labels.length <= 2) return host;
+    if (_looksLikeIp(host)) return host;
     return labels.sublist(labels.length - 2).join('.');
+  }
+
+  /// Whether [host] is an IP literal (v4 or v6, with or without brackets).
+  /// Kept dependency-free: the core package has no `dart:io` import.
+  static bool _looksLikeIp(String host) {
+    final bare = host.startsWith('[') && host.endsWith(']')
+        ? host.substring(1, host.length - 1)
+        : host;
+    if (bare.contains(':')) return true; // IPv6
+    final labels = bare.split('.');
+    if (labels.length != 4) return false;
+    for (final label in labels) {
+      if (label.isEmpty || label.length > 3) return false;
+      final value = int.tryParse(label);
+      if (value == null || value < 0 || value > 255) return false;
+    }
+    return true;
   }
 
   _PooledInstance? _instanceFor(String sessionId) {
@@ -171,6 +212,16 @@ class WebviewPool {
     }
   }
 
+  /// Disposes a created-but-never-registered instance, swallowing a
+  /// secondary disposal failure so the original one still propagates.
+  Future<void> _disposeUnstarted(String webviewId) async {
+    try {
+      await service.disposeHeadless(id: webviewId);
+    } on Object {
+      // The failure that stopped the acquire is the one worth reporting.
+    }
+  }
+
   Future<void> _dispose(_PooledInstance inst) async {
     _held.remove(inst);
     await service.disposeHeadless(id: inst.webviewId);
@@ -179,7 +230,7 @@ class WebviewPool {
 
 class _PooledInstance {
   final String webviewId;
-  final String? domain;
+  String? domain;
   String? session;
   DateTime idleSince;
 

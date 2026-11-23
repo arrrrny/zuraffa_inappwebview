@@ -55,11 +55,15 @@ class CassetteEntry {
         if (c.status != null) 'status': c.status,
         'responseHeaders': c.responseHeaders,
         if (c.responseBody != null) 'responseBody': c.responseBody,
-        'at': c.at.toIso8601String(),
       };
 }
 
 /// A versioned, JSON-portable recording of one headless session.
+///
+/// A cassette is plaintext: cookie values, `localStorage` and captured
+/// bodies are stored exactly as recorded (auth-shaped secrets in captures
+/// are redacted, cookies are not). Treat a cassette as sensitive and
+/// persist it somewhere appropriately protected.
 class Cassette {
   static const int currentFormatVersion = 1;
 
@@ -73,26 +77,37 @@ class Cassette {
         'entries': [for (final e in entries) e.toJson()],
       };
 
-  /// Reads a cassette with a missing `formatVersion` as the current
-  /// format, and refuses an unsupported one: versioning only means
-  /// something if a reader can reject a file it cannot interpret.
+  /// Decodes a cassette payload.
+  ///
+  /// The version is *checked*, not copied through: a future v2 cassette
+  /// fails as `cassette_version` instead of being silently replayed under
+  /// v1 rules, and a foreign shape fails as `malformed_response` instead
+  /// of escaping as an untyped `TypeError`.
   static Cassette fromJson(Map<String, Object?> json) {
-    final version = json['formatVersion'] as int? ?? currentFormatVersion;
-    if (version != currentFormatVersion) {
+    final version = json['formatVersion'] ?? currentFormatVersion;
+    if (version is! int || version != currentFormatVersion) {
       throw WebviewException(
-        'vcr_unsupported_format',
-        'Cassette format v$version is not supported (this build reads '
-        'v$currentFormatVersion).',
+        'cassette_version',
+        'Cassette format version $version is not supported '
+        '(this build reads v$currentFormatVersion).',
         recoverable: false,
       );
     }
-    return Cassette(
-      formatVersion: version,
-      entries: [
-        for (final e in (json['entries'] as List? ?? const []))
-          CassetteEntry.fromJson(Map<String, Object?>.from(e as Map)),
-      ],
-    );
+    try {
+      return Cassette(
+        formatVersion: version,
+        entries: [
+          for (final e in (json['entries'] as List? ?? const []))
+            CassetteEntry.fromJson(Map<String, Object?>.from(e as Map)),
+        ],
+      );
+    } on Object catch (error) {
+      throw WebviewException(
+        'malformed_response',
+        'The cassette payload could not be decoded: $error',
+        recoverable: false,
+      );
+    }
   }
 }
 
@@ -102,12 +117,13 @@ class Cassette {
 /// captures observed since the previous navigation. Capture payloads are
 /// defensively re-redacted (the 005 redactor).
 ///
-/// Capture ownership is decided when the navigation event arrives: the
-/// pending captures are snapshotted and cleared synchronously at that
-/// point, and the html/cookie freeze that follows is single-flight in
-/// event order. A capture arriving *during* a freeze therefore belongs to
-/// the next navigation — it is never misattributed to the entry being
-/// frozen, and never dropped.
+/// Navigations are ingested strictly in order: [ingestNavigation] awaits
+/// two service round-trips before touching the buffers, and redirect
+/// chains emit several completed events in quick succession, so the
+/// ingestions are serialised on an internal chain and [stop] drains it.
+///
+/// One recorder records one session — construct a fresh recorder per
+/// recording rather than calling [record] again after [stop].
 class VcrRecorder {
   final WebviewService service;
   final String webviewId;
@@ -116,19 +132,40 @@ class VcrRecorder {
   final List<CassetteEntry> _entries = [];
   final List<WebviewCaptureEntry> _pendingCaptures = [];
   final List<StreamSubscription> _subs = [];
-
-  /// Tail of the single-flight freeze queue.
-  Future<void> _queue = Future<void>.value();
+  final List<Object> _errors = [];
+  Future<void> _ingestChain = Future<void>.value();
 
   VcrRecorder({required this.service, required this.webviewId});
+
+  /// Errors observed on the watched streams, or raised while ingesting an
+  /// entry. Nothing here is thrown at the caller: a disposed webview or a
+  /// channel hiccup mid-recording captures an error instead of taking
+  /// down the recording (and the process).
+  List<Object> get errors => List.unmodifiable(_errors);
 
   /// Starts watching [navigationEvents] and [captureEvents].
   void record({
     required Stream<WebviewNavigationEvent> navigationEvents,
     required Stream<WebviewCaptureEntry> captureEvents,
   }) {
-    _subs.add(captureEvents.listen(ingestCapture));
-    _subs.add(navigationEvents.listen(ingestNavigation));
+    _subs.add(captureEvents.listen(
+      ingestCapture,
+      onError: (Object error, StackTrace _) => _errors.add(error),
+    ));
+    _subs.add(navigationEvents.listen(
+      (event) {
+        _ingestChain = _ingestChain.then((_) => _ingestSafely(event));
+      },
+      onError: (Object error, StackTrace _) => _errors.add(error),
+    ));
+  }
+
+  Future<void> _ingestSafely(WebviewNavigationEvent event) async {
+    try {
+      await ingestNavigation(event);
+    } on Object catch (error) {
+      _errors.add(error);
+    }
   }
 
   /// Buffers one capture (redacted defensively) for the next entry.
@@ -136,44 +173,31 @@ class VcrRecorder {
       _pendingCaptures.add(_redactor.redact(entry));
 
   /// Freezes an entry for a completed main-frame navigation.
-  ///
-  /// The pending-capture snapshot and clear are synchronous with the event;
-  /// only the html/cookie freeze is asynchronous, and it is queued so
-  /// entries follow event order rather than await-resolution order.
-  Future<void> ingestNavigation(WebviewNavigationEvent event) {
+  Future<void> ingestNavigation(WebviewNavigationEvent event) async {
     if (event.phase != WebviewNavigationPhase.completed ||
         !event.isMainFrame) {
-      return Future<void>.value();
+      return;
     }
-    final captures = List.of(_pendingCaptures);
-    _pendingCaptures.clear();
-    final frozen = _queue.then((_) => _freeze(event, captures));
-    _queue = frozen.catchError((Object _) {});
-    return frozen;
-  }
-
-  Future<void> _freeze(
-    WebviewNavigationEvent event,
-    List<WebviewCaptureEntry> captures,
-  ) async {
     final html = await service.getHtml(id: webviewId) ?? '';
-    final cookies = await service.getCookies(url: event.url);
+    final cookies =
+        await service.getCookies(url: event.url);
     _entries.add(CassetteEntry(
       url: event.url,
       html: html,
       cookies: List.of(cookies),
-      captures: captures,
+      captures: List.of(_pendingCaptures),
     ));
+    _pendingCaptures.clear();
   }
 
-  /// Stops watching and returns the cassette, waiting for any in-flight
-  /// freeze so nothing observed is missing from it.
+  /// Stops watching, drains any in-flight ingestion, and returns the
+  /// cassette.
   Future<Cassette> stop() async {
     for (final sub in _subs) {
       await sub.cancel();
     }
     _subs.clear();
-    await _queue;
+    await _ingestChain;
     return Cassette(entries: List.of(_entries));
   }
 }
@@ -183,12 +207,6 @@ class VcrRecorder {
 /// the `loadHtml` port op, and synthesizes its captures on
 /// [captureEvents] so downstream capture/distillation logic runs
 /// unmodified — zero network.
-///
-/// Limitation: replay restores html and captures only. [CassetteEntry.cookies]
-/// is recorded and JSON round-tripped, but nothing here writes it back —
-/// `loadHtml` renders through the platform's *shared* cookie store and no
-/// `setCookie` restore is issued, so a replay is deterministic in served
-/// content, not in cookie state.
 class VcrReplayer {
   final Cassette cassette;
   final WebviewService service;
@@ -205,12 +223,9 @@ class VcrReplayer {
   });
 
   /// Synthesized capture events for every served entry (broadcast).
-  /// Closed by [dispose].
   Stream<WebviewCaptureEntry> get captureEvents => _captures.stream;
 
-  /// Closes the synthesized capture stream. Call when done replaying — a
-  /// consumer that awaits completion (`toList`, `firstWhere`) would
-  /// otherwise never see a done event.
+  /// Closes [captureEvents]; call when the replay is finished.
   Future<void> dispose() => _captures.close();
 
   /// Serves the best-matching entry for [url] offline.
@@ -236,10 +251,8 @@ class VcrReplayer {
     }
   }
 
-  /// Exact url match first; otherwise the longest same-origin entry whose
-  /// path is a prefix of the requested path **ending on a path-segment
-  /// boundary** (`/a` matches `/a` and `/a/page/2`, never `/abc`). The
-  /// query is not part of the comparison; the port is.
+  /// Exact url match first; otherwise the entry whose url is the longest
+  /// path-prefix of the requested url (query-insensitive).
   CassetteEntry? _bestMatch(String url) {
     for (final e in cassette.entries) {
       if (e.url == url) return e;
@@ -250,16 +263,10 @@ class VcrReplayer {
     for (final e in cassette.entries) {
       final entryUri = Uri.tryParse(e.url);
       if (entryUri == null) continue;
-      final sameOrigin = entryUri.scheme == requested.scheme &&
-          entryUri.host == requested.host &&
-          entryUri.port == requested.port;
+      final sameOrigin =
+          entryUri.scheme == requested.scheme && entryUri.host == requested.host;
       if (!sameOrigin) continue;
-      final boundary = entryUri.path.endsWith('/')
-          ? entryUri.path
-          : '${entryUri.path}/';
-      final matchesPath = requested.path == entryUri.path ||
-          requested.path.startsWith(boundary);
-      if (matchesPath &&
+      if (requested.path.startsWith(entryUri.path) &&
           (best == null ||
               Uri.parse(best.url).path.length < entryUri.path.length)) {
         best = e;

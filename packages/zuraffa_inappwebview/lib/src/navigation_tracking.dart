@@ -4,8 +4,6 @@ library;
 
 import 'dart:async';
 
-import 'webview_exception.dart';
-
 /// The phase of a navigation event (channel key `type`).
 enum WebviewNavigationPhase { started, completed, failed }
 
@@ -26,24 +24,17 @@ class WebviewNavigationEvent {
   }) : at = at ?? DateTime.now();
 
   /// Codec from channel args: `type`, `url`, `isMainFrame` (default true),
-  /// `code` (optional). An unrecognized `type` is a typed
-  /// `malformed_response` failure rather than a silent `started`: the
-  /// phase enum has no unknown member for a caller to defend against.
-  static WebviewNavigationEvent fromChannelArgs(
+  /// `code` (optional).
+  ///
+  /// Returns null when `type` names no known phase: an unrecognised event
+  /// is dropped rather than silently recorded as `started`, so a platform
+  /// rename or typo cannot inject phantom visits into the record.
+  static WebviewNavigationEvent? fromChannelArgs(
     Map<String, Object?> args, {
     DateTime? at,
   }) {
-    final raw = args['type'];
-    final phase = WebviewNavigationPhase.values
-        .where((p) => p.name == raw)
-        .firstOrNull;
-    if (phase == null) {
-      throw WebviewException(
-        'malformed_response',
-        'Unknown navigation phase "$raw".',
-        recoverable: false,
-      );
-    }
+    final phase = phaseOf(args['type']);
+    if (phase == null) return null;
     return WebviewNavigationEvent(
       phase: phase,
       url: args['url'] as String? ?? '',
@@ -51,6 +42,14 @@ class WebviewNavigationEvent {
       errorCode: args['code'] as String?,
       at: at,
     );
+  }
+
+  /// The phase named by a raw channel `type`, or null when unrecognised.
+  static WebviewNavigationPhase? phaseOf(Object? raw) {
+    for (final phase in WebviewNavigationPhase.values) {
+      if (phase.name == raw) return phase;
+    }
+    return null;
   }
 
   @override
@@ -83,10 +82,8 @@ class UrlVisit {
 
 /// Ordered, deduplicated URL-cycle record per webview id (spec 004).
 ///
-/// - Dedup rule: a (phase + url) transition repeating *immediately after
-///   the preceding visit* within [dedupWindow] collapses into that visit.
-///   The scope is adjacency, not the whole window: a url that repeats
-///   after any intervening transition is recorded again.
+/// - Dedup rule: a transition (phase + url) repeating within
+///   [dedupWindow] collapses to its earliest occurrence.
 /// - `mainFrameOnly` (default) drops sub-frame events.
 /// - [hasCycle] reports a revisit loop (A → B → A) over the record.
 ///
@@ -101,6 +98,7 @@ class NavigationTracker {
 
   final Map<String, List<UrlVisit>> _entries = {};
   final Map<String, StreamSubscription<WebviewNavigationEvent>> _subs = {};
+  final Map<String, Object> _errors = {};
 
   NavigationTracker({
     this.dedupWindow = defaultDedupWindow,
@@ -110,15 +108,39 @@ class NavigationTracker {
 
   /// Records events from [events] under [id], replacing any previous
   /// subscription for that id. Cancel with [detach].
+  ///
+  /// The streams are specified to carry typed errors (`channel_not_wired`,
+  /// `malformed_response`), so a handler is installed: without one they
+  /// would surface as unhandled async errors. The last one is readable
+  /// via [error].
   void attach(String id, Stream<WebviewNavigationEvent> events) {
     _subs[id]?.cancel();
-    _subs[id] = events.listen((e) => handleEvent(id, e));
+    _errors.remove(id);
+    _subs[id] = events.listen(
+      (e) => handleEvent(id, e),
+      onError: (Object error, StackTrace _) => _errors[id] = error,
+    );
   }
+
+  /// The last stream error observed for [id], if any.
+  Object? error(String id) => _errors[id];
 
   /// Stops recording for [id] (keeps the record accumulated so far).
   void detach(String id) {
     _subs.remove(id)?.cancel();
   }
+
+  /// Cancels every subscription (call when the tracker is done).
+  void dispose() {
+    for (final sub in _subs.values) {
+      sub.cancel();
+    }
+    _subs.clear();
+  }
+
+  /// Drops the recorded visits for [id] (the sibling of
+  /// `NetworkCaptureManager.clear`).
+  void clear(String id) => _entries[id]?.clear();
 
   /// Records one event. Pure — no webview required. Timing authority is
   /// the tracker's [clock] — platform event timestamps are informational.
@@ -150,8 +172,7 @@ class NavigationTracker {
       (_entries[id]?.isEmpty ?? true) ? null : _entries[id]!.last.url;
 
   /// Whether the record shows a revisit loop: the latest url reappears
-  /// anywhere earlier in the record (A → B → A). Consecutive repeats
-  /// count too, so A → A → A reports a cycle.
+  /// earlier in the record (A → B → A).
   bool hasCycle(String id) {
     final urls = _entries[id]?.map((v) => v.url).toList() ?? const [];
     if (urls.length < 3) return false;

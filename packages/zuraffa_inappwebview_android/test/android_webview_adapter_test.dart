@@ -274,4 +274,69 @@ void main() {
       expect(lastArgs['baseUrl'], 'https://x.dev/a');
     });
   });
+
+  group('typed taxonomy (spec 010 FR-3)', () {
+    test('the adapter failure is also a WebviewException', () async {
+      port = AndroidWebviewPort(channel: scripted(nativeError: {
+        'code': 'not_supported',
+        'message': 'nope',
+      }));
+      await expectLater(
+        port.runHeadless(id: 'w'),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'not_supported')),
+      );
+    });
+
+    test('a non-integer byte value -> malformed_response', () async {
+      port = AndroidWebviewPort(channel: scripted(payload: {
+        'data': [1.5, 2.0],
+      }));
+      await expectLater(
+        port.takeScreenshot(id: 'w'),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+    });
+
+    test('a malformed cookie entry -> malformed_response', () async {
+      port = AndroidWebviewPort(channel: scripted(payload: {
+        'cookies': ['oops'],
+      }));
+      await expectLater(
+        port.getCookies(url: 'https://x.dev'),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+      port = AndroidWebviewPort(channel: scripted(payload: {
+        'cookies': [
+          {'value': 'x'},
+        ],
+      }));
+      await expectLater(
+        port.getCookies(url: 'https://x.dev'),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+    });
+
+    test('an unrecognised navigation type is dropped', () async {
+      final events = StreamController<Object?>();
+      addTearDown(() => unawaited(events.close()));
+      port = AndroidWebviewPort(channel: AndroidWebviewChannel(
+        invoke: (m, a) async => {'ok': true},
+        eventSource: (method) => method == 'navigationEvents'
+            ? events.stream
+            : const Stream.empty(),
+      ));
+      final seen = <WebviewNavigationEvent>[];
+      final sub = port.navigationEvents(id: 'w').listen(seen.add);
+      await Future<void>.delayed(Duration.zero);
+      events.add({'id': 'w', 'type': 'loading', 'url': 'https://x.dev/'});
+      events.add({'id': 'w', 'type': 'completed', 'url': 'https://x.dev/'});
+      await Future<void>.delayed(Duration.zero);
+      expect(seen.map((e) => e.phase), [WebviewNavigationPhase.completed]);
+      await sub.cancel();
+    });
+  });
 }

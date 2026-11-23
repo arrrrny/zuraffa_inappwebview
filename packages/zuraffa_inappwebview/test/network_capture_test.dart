@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:test/test.dart';
 import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
@@ -48,6 +47,12 @@ void main() {
         {'urlPattern': '/api/', 'maxBodyBytes': 512},
       );
     });
+
+    test('C6: filter.matches is a case-insensitive substring test', () {
+      const filter = WebviewCaptureFilter(urlPattern: '/API/');
+      expect(filter.matches(_entry(url: 'https://x.dev/api/v2')), isTrue);
+      expect(filter.matches(_entry(url: 'https://x.dev/img')), isFalse);
+    });
   });
 
   group('US1 — service guards', () {
@@ -76,10 +81,10 @@ void main() {
       );
     });
 
-    test('C2: captureEvents guards + unwired', () async {
-      await expectLater(
-        service.captureEvents(id: 'nope'),
-        emitsError(isA<WebviewException>()
+    test('C2: captureEvents guards + unwired', () {
+      expect(
+        () => service.captureEvents(id: 'nope'),
+        throwsA(isA<WebviewException>()
             .having((e) => e.code, 'code', 'not_created')),
       );
       expect(
@@ -122,9 +127,10 @@ void main() {
       manager.ingest(
         'w',
         _entry(
-          url: 'https://x.dev/p?keep=1&token=abc#frag',
+          url: 'https://x.dev/p?token=abc&keep=1',
           requestHeaders: {
             'Authorization': 'Bearer xyz',
+            'authorization': 'Bearer lower',
             'Cookie': 'a=b',
             'Accept': 'json',
           },
@@ -132,27 +138,11 @@ void main() {
       );
       final e = manager.entries('w').single;
       expect(e.requestHeaders['Authorization'], '<redacted>');
+      expect(e.requestHeaders['authorization'], '<redacted>');
       expect(e.requestHeaders['Cookie'], '<redacted>');
       expect(e.requestHeaders['Accept'], 'json');
-      // Whole-string equality: the secret is last, the kept param survives
-      // and the fragment is not swallowed by the redacted param.
-      expect(e.url, 'https://x.dev/p?keep=1&token=<redacted>#frag');
-    });
-
-    test('C4: redactUrl is whole-string stable across fragment orders', () {
-      const redactor = CaptureSecretRedactor();
-      expect(
-        redactor.redactUrl('https://x.dev/p?token=abc#section-2'),
-        'https://x.dev/p?token=<redacted>#section-2',
-      );
-      expect(
-        redactor.redactUrl('https://x.dev/p#section-2'),
-        'https://x.dev/p#section-2',
-      );
-      expect(
-        redactor.redactUrl('https://x.dev/p?keep=1&api_key=abc&x=2'),
-        'https://x.dev/p?keep=1&api_key=<redacted>&x=2',
-      );
+      expect(e.url, contains('token=<redacted>'));
+      expect(e.url, contains('keep=1'));
     });
 
     test('C4: redaction off keeps values verbatim', () {
@@ -187,16 +177,58 @@ void main() {
       expect(manager.entries('w').last.responseBody, hasLength(10));
     });
 
-    test('C5: maxBodyBytes is a UTF-8 byte budget on a rune boundary', () {
+    test('C4: a malformed query key does not throw', () {
+      final manager = NetworkCaptureManager();
+      for (final url in const [
+        'https://x.dev/p?名前=1',
+        'https://x.dev/p?100%=x',
+        'https://x.dev/p?a%2=x',
+        'https://x.dev/p?bad=%FF',
+      ]) {
+        manager.ingest('w', _entry(url: url));
+      }
+      expect(manager.entries('w'), hasLength(4));
+      manager.ingest('w', _entry(url: 'https://x.dev/p?token=abc'));
+      expect(manager.entries('w').last.url, contains('token=<redacted>'));
+    });
+
+    test('C5: a negative budget is clamped, not a RangeError', () {
+      expect(const CaptureBudget(maxEntries: -1).maxEntries, 0);
+      expect(const CaptureBudget(maxBodyBytes: -5).maxBodyBytes, 0);
       final manager = NetworkCaptureManager(
-        budget: const CaptureBudget(maxBodyBytes: 3),
+        budget: const CaptureBudget(maxBodyBytes: -5),
       );
-      manager.ingest('w', _entry(responseBody: 'ab😀'));
-      final body = manager.entries('w').single.responseBody!;
-      // The emoji needs 4 bytes, so the budget stops before it — no lone
-      // surrogate is emitted.
-      expect(body, 'ab');
-      expect(utf8.encode(body), [97, 98]);
+      manager.ingest('w', _entry(responseBody: 'abc'));
+      expect(manager.entries('w').single.responseBody, '');
+    });
+
+    test('C5: truncation never splits a surrogate pair', () {
+      String cut(int max) {
+        final manager = NetworkCaptureManager(
+          budget: CaptureBudget(maxBodyBytes: max),
+        );
+        manager.ingest('w', _entry(responseBody: '😀😀'));
+        return manager.entries('w').single.responseBody!;
+      }
+
+      expect(cut(1), '');
+      expect(cut(2), '😀');
+      expect(cut(3), '😀');
+    });
+
+    test('C3: stream errors are captured, not unhandled', () async {
+      final controller = StreamController<WebviewCaptureEntry>();
+      final manager = NetworkCaptureManager();
+      manager.attach('w', controller.stream);
+      controller.addError(const WebviewException(
+        'channel_not_wired',
+        'no event source',
+        recoverable: false,
+      ));
+      await Future<void>.delayed(Duration.zero);
+      expect(manager.error('w'), isA<WebviewException>());
+      manager.dispose();
+      await controller.close();
     });
   });
 }

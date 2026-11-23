@@ -12,4 +12,4 @@
 | N7b | ios adapter: same | T009 | DONE |
 | N7c | macos adapter: same | T010 | DONE |
 
-Counts: 9 behaviors, 0 covered, 9 to drive.
+Counts: 9 behaviors, 9 driven red → green, 0 remaining.

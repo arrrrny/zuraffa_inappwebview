@@ -135,9 +135,7 @@ Future<ReplayResult> replay(
 }
 
 /// [RecipeDriver] over [WebviewService] (spec 007 US3): loads validated
-/// urls and clicks selectors via the canonical tap script. The selector
-/// becomes a JSON string literal, so backslashes, quotes and control
-/// characters reach the browser as the caller wrote them.
+/// urls and clicks selectors via the canonical tap script.
 class WebviewServiceRecipeDriver implements RecipeDriver {
   final WebviewService service;
   final String webviewId;
@@ -153,10 +151,14 @@ class WebviewServiceRecipeDriver implements RecipeDriver {
         url: WebviewUri(url.toString()),
       );
 
+  /// The selector is encoded as a JS string literal (`jsonEncode` escapes
+  /// quotes, backslashes and newlines alike), and a missing element is
+  /// reported as `false` instead of calling `null()`.
   @override
   Future<void> tap(String selector) => service.evaluateJavascript(
         id: webviewId,
-        source:
-            "(document.querySelector(${jsonEncode(selector)}) ?? {click: null}).click()",
+        source: '(() => { const el = document.querySelector('
+            '${jsonEncode(selector)});'
+            ' if (!el) return false; el.click(); return true; })()',
       );
 }

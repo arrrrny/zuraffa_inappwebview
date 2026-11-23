@@ -96,6 +96,10 @@ class MacosWebviewPort implements WebviewPort {
     return _decodeBytes(result?['data']);
   }
 
+  /// Decodes a byte payload, keeping every rejection inside the typed
+  /// taxonomy: a non-list, a non-integer element (JSON `1.5`, a base64
+  /// chunk, a null from a half-implemented native shell) is a
+  /// `malformed_response`, never a raw `TypeError`.
   List<int>? _decodeBytes(Object? raw) {
     if (raw == null) return null;
     if (raw is! List) {
@@ -105,7 +109,18 @@ class MacosWebviewPort implements WebviewPort {
         recoverable: false,
       );
     }
-    return [for (final b in raw) b as int];
+    final bytes = <int>[];
+    for (final value in raw) {
+      if (value is! int) {
+        throw const MacosWebviewException(
+          'malformed_response',
+          'The capture result carried a non-integer byte value.',
+          recoverable: false,
+        );
+      }
+      bytes.add(value);
+    }
+    return bytes;
   }
 
   @override
@@ -130,7 +145,7 @@ class MacosWebviewPort implements WebviewPort {
       return Map<String, Object?>.from(raw);
     }).where((map) => map['id'] == id).map(
           WebviewNavigationEvent.fromChannelArgs,
-        );
+        ).where((event) => event != null).cast<WebviewNavigationEvent>();
   }
 
   @override
@@ -201,10 +216,27 @@ class MacosWebviewPort implements WebviewPort {
         recoverable: false,
       );
     }
-    return [
-      for (final entry in raw)
-        WebviewCookie.fromChannelArgs(Map<String, Object?>.from(entry as Map)),
-    ];
+    final cookies = <WebviewCookie>[];
+    for (final entry in raw) {
+      if (entry is! Map) {
+        throw const MacosWebviewException(
+          'malformed_response',
+          'The getCookies result carried a non-map cookie entry.',
+          recoverable: false,
+        );
+      }
+      try {
+        cookies.add(WebviewCookie.fromChannelArgs(
+            Map<String, Object?>.from(entry)));
+      } on Object catch (error) {
+        throw MacosWebviewException(
+          'malformed_response',
+          'A cookie entry could not be decoded: $error',
+          recoverable: false,
+        );
+      }
+    }
+    return cookies;
   }
 
   @override
