@@ -10,9 +10,14 @@ library;
 /// The canonical overlay-removal script.
 ///
 /// Contract (spec 002, FR-2/FR-6): removes every element whose computed
-/// position is `fixed` or `sticky`, resets `overflow`/`margin` on
-/// `documentElement` and `body`, touches only the top-level document, and
-/// never throws — the whole body is guarded, returning the removed count.
+/// position is `fixed` or `sticky` except the two document roots —
+/// `documentElement` and `body` may legitimately be `fixed` themselves (the
+/// common `body { position: fixed }` scroll-lock used behind modals), and
+/// removing them would blank the page while still reporting `removed > 0`.
+/// Resets `overflow`/`margin` on those roots instead, touches only the
+/// top-level document, and never throws — the whole body is guarded,
+/// returning the removed count. Matches are collected before any removal so
+/// `getComputedStyle` is not interleaved with DOM mutations.
 class DialogueDismissScript {
   const DialogueDismissScript._();
 
@@ -21,13 +26,16 @@ class DialogueDismissScript {
   try {
     var removed = 0;
     var all = document.querySelectorAll('*');
+    var doomed = [];
     for (var i = 0; i < all.length; i++) {
       var el = all[i];
+      if (el === document.documentElement || el === document.body) continue;
       var pos = window.getComputedStyle(el).position;
-      if (pos === 'fixed' || pos === 'sticky') {
-        el.remove();
-        removed++;
-      }
+      if (pos === 'fixed' || pos === 'sticky') doomed.push(el);
+    }
+    for (var k = 0; k < doomed.length; k++) {
+      doomed[k].remove();
+      removed++;
     }
     var roots = [document.documentElement, document.body];
     for (var j = 0; j < roots.length; j++) {

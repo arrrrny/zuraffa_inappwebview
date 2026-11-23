@@ -96,16 +96,31 @@ class AndroidWebviewPort implements WebviewPort {
     return _decodeBytes(result?['data']);
   }
 
+  /// Decodes a byte payload, keeping every rejection inside the typed
+  /// taxonomy: a non-list, a non-integer element (JSON `1.5`, a base64
+  /// chunk, a null from a half-implemented native shell) is a
+  /// `malformed_response`, never a raw `TypeError`.
   List<int>? _decodeBytes(Object? raw) {
     if (raw == null) return null;
-    // A Uint8List/List<int> from the platform codec already satisfies the
-    // contract — return it as-is instead of copying multi-MB payloads.
-    if (raw is List<int>) return raw;
-    throw const AndroidWebviewException(
-      'malformed_response',
-      'The capture result carried a non-int byte payload.',
-      recoverable: false,
-    );
+    if (raw is! List) {
+      throw const AndroidWebviewException(
+        'malformed_response',
+        'The capture result carried a non-list data payload.',
+        recoverable: false,
+      );
+    }
+    final bytes = <int>[];
+    for (final value in raw) {
+      if (value is! int) {
+        throw const AndroidWebviewException(
+          'malformed_response',
+          'The capture result carried a non-integer byte value.',
+          recoverable: false,
+        );
+      }
+      bytes.add(value);
+    }
+    return bytes;
   }
 
   @override
@@ -119,12 +134,7 @@ class AndroidWebviewPort implements WebviewPort {
         recoverable: false,
       ));
     }
-    // Foreign payloads are dropped before decoding, so a malformed event
-    // for another webview can never error this subscription; a non-map
-    // payload still surfaces the typed `malformed_response` (US4-2).
-    return source('navigationEvents')
-        .where((raw) => raw is! Map || raw['id'] == id)
-        .asyncMap((raw) {
+    return source('navigationEvents').asyncMap((raw) {
       if (raw is! Map) {
         throw const AndroidWebviewException(
           'malformed_response',
@@ -133,7 +143,22 @@ class AndroidWebviewPort implements WebviewPort {
         );
       }
       return Map<String, Object?>.from(raw);
-    }).map(WebviewNavigationEvent.fromChannelArgs);
+    }).where((map) => map['id'] == id).map(
+          WebviewNavigationEvent.fromChannelArgs,
+        ).where((event) => event != null).cast<WebviewNavigationEvent>();
+  }
+
+  @override
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) async {
+    await channel.call('loadHtml', {
+      'id': id,
+      'html': html,
+      if (baseUrl != null) 'baseUrl': baseUrl,
+    });
   }
 
   @override
@@ -160,12 +185,7 @@ class AndroidWebviewPort implements WebviewPort {
         recoverable: false,
       ));
     }
-    // Same id-scoping as navigationEvents: foreign payloads are dropped
-    // before decoding, while a non-map payload still surfaces the typed
-    // `malformed_response`.
-    return source('captureEvents')
-        .where((raw) => raw is! Map || raw['id'] == id)
-        .asyncMap((raw) {
+    return source('captureEvents').asyncMap((raw) {
       if (raw is! Map) {
         throw const AndroidWebviewException(
           'malformed_response',
@@ -174,7 +194,9 @@ class AndroidWebviewPort implements WebviewPort {
         );
       }
       return Map<String, Object?>.from(raw);
-    }).map(WebviewCaptureEntry.fromChannelArgs);
+    }).where((map) => map['id'] == id).map(
+          WebviewCaptureEntry.fromChannelArgs,
+        );
   }
 
   @override
@@ -194,10 +216,27 @@ class AndroidWebviewPort implements WebviewPort {
         recoverable: false,
       );
     }
-    return [
-      for (final entry in raw)
-        WebviewCookie.fromChannelArgs(Map<String, Object?>.from(entry as Map)),
-    ];
+    final cookies = <WebviewCookie>[];
+    for (final entry in raw) {
+      if (entry is! Map) {
+        throw const AndroidWebviewException(
+          'malformed_response',
+          'The getCookies result carried a non-map cookie entry.',
+          recoverable: false,
+        );
+      }
+      try {
+        cookies.add(WebviewCookie.fromChannelArgs(
+            Map<String, Object?>.from(entry)));
+      } on Object catch (error) {
+        throw AndroidWebviewException(
+          'malformed_response',
+          'A cookie entry could not be decoded: $error',
+          recoverable: false,
+        );
+      }
+    }
+    return cookies;
   }
 
   @override

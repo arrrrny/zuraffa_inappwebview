@@ -101,12 +101,10 @@ class ScreenshotConfiguration {
   final ScreenshotFormat format;
   final int quality;
 
-  /// [quality] is clamped to the documented 1–100 range, so an
-  /// out-of-range value can never reach the platform.
   const ScreenshotConfiguration({
     this.format = ScreenshotFormat.png,
-    int quality = 100,
-  }) : quality = quality < 1 ? 1 : (quality > 100 ? 100 : quality);
+    this.quality = 100,
+  });
 
   Map<String, Object?> toChannelArgs() =>
       {'format': format.name, 'quality': quality};

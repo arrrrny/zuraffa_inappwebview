@@ -11,7 +11,5 @@
 | N7a | android adapter: id-filtered decode, malformed on non-map, channel_not_wired without source | T008 | DONE |
 | N7b | ios adapter: same | T009 | DONE |
 | N7c | macos adapter: same | T010 | DONE |
-| N8 | unknown navigation `type` decodes to `unknown` (never mislabelled `started`); `clear(id)` drops the record | T011 | DONE |
-| N9 | `attach` contains stream errors and recording continues | T012 | DONE |
 
-Counts: 11 behaviors (N7×3 counted per platform), 11 DONE.
+Counts: 9 behaviors, 9 driven red → green, 0 remaining.

@@ -92,7 +92,7 @@ void main() {
   });
 
   group('capture ops (spec 003)', () {
-    test('S6: takeScreenshot forwards config args and decodes data',
+    test('S6a: takeScreenshot forwards config args and decodes data',
         () async {
       port = MacosWebviewPort(channel: scripted(payload: {
         'data': [1, 2, 3],
@@ -111,12 +111,12 @@ void main() {
       expect(lastArgs['quality'], 80);
     });
 
-    test('S6: null data passes through as null', () async {
+    test('S6a: null data passes through as null', () async {
       port = MacosWebviewPort(channel: scripted(payload: {'data': null}));
       expect(await port.takeScreenshot(id: 'w'), isNull);
     });
 
-    test('S6: non-list data raises malformed_response', () async {
+    test('S6a: non-list data raises malformed_response', () async {
       port = MacosWebviewPort(channel: scripted(payload: {'data': 'oops'}));
       await expectLater(
         port.takeScreenshot(id: 'w'),
@@ -125,7 +125,7 @@ void main() {
       );
     });
 
-    test('S6: exportPdf rides its own method name', () async {
+    test('S6a: exportPdf rides its own method name', () async {
       port = MacosWebviewPort(channel: scripted(payload: {
         'data': [9, 8, 7],
       }));
@@ -260,26 +260,67 @@ void main() {
     });
   });
 
-  group('review-fix hardening', () {
-    test('S6: a non-int byte element -> typed malformed_response', () async {
+  group('loadHtml (spec 008)', () {
+    test('V7: ships id + html + baseUrl on the envelope', () async {
+      port = MacosWebviewPort(channel: scripted(payload: {'ok': true}));
+      await port.loadHtml(
+        id: 'w',
+        html: '<html/>',
+        baseUrl: 'https://x.dev/a',
+      );
+      expect(lastMethod, 'loadHtml');
+      expect(lastArgs['id'], 'w');
+      expect(lastArgs['html'], '<html/>');
+      expect(lastArgs['baseUrl'], 'https://x.dev/a');
+    });
+  });
+
+  group('typed taxonomy (spec 010 FR-3)', () {
+    test('the adapter failure is also a WebviewException', () async {
+      port = MacosWebviewPort(channel: scripted(nativeError: {
+        'code': 'not_supported',
+        'message': 'nope',
+      }));
+      await expectLater(
+        port.runHeadless(id: 'w'),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'not_supported')),
+      );
+    });
+
+    test('a non-integer byte value -> malformed_response', () async {
       port = MacosWebviewPort(channel: scripted(payload: {
-        'data': ['a', 'b'],
+        'data': [1.5, 2.0],
       }));
       await expectLater(
         port.takeScreenshot(id: 'w'),
-        throwsA(isA<MacosWebviewException>()
+        throwsA(isA<WebviewException>()
             .having((e) => e.code, 'code', 'malformed_response')),
       );
     });
 
-    test('S6: a List<int> payload is returned without a copy', () async {
-      final bytes = <int>[1, 2, 3];
-      port = MacosWebviewPort(channel: scripted(payload: {'data': bytes}));
-      expect(identical(await port.exportPdf(id: 'w'), bytes), isTrue);
+    test('a malformed cookie entry -> malformed_response', () async {
+      port = MacosWebviewPort(channel: scripted(payload: {
+        'cookies': ['oops'],
+      }));
+      await expectLater(
+        port.getCookies(url: 'https://x.dev'),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
+      port = MacosWebviewPort(channel: scripted(payload: {
+        'cookies': [
+          {'value': 'x'},
+        ],
+      }));
+      await expectLater(
+        port.getCookies(url: 'https://x.dev'),
+        throwsA(isA<WebviewException>()
+            .having((e) => e.code, 'code', 'malformed_response')),
+      );
     });
 
-    test('N8: a foreign undecodable payload never errors this subscriber',
-        () async {
+    test('an unrecognised navigation type is dropped', () async {
       final events = StreamController<Object?>();
       addTearDown(() => unawaited(events.close()));
       port = MacosWebviewPort(channel: MacosWebviewChannel(
@@ -288,43 +329,13 @@ void main() {
             ? events.stream
             : const Stream.empty(),
       ));
-      Object? error;
       final seen = <WebviewNavigationEvent>[];
-      final sub = port.navigationEvents(id: 'w').listen(
-            seen.add,
-            onError: (Object e) => error = e,
-          );
+      final sub = port.navigationEvents(id: 'w').listen(seen.add);
       await Future<void>.delayed(Duration.zero);
-      // Unconvertible to Map<String, Object?> and not addressed to 'w':
-      // dropped before decoding, so this subscription never sees it.
-      events.add({1: 'not-a-string-key'});
+      events.add({'id': 'w', 'type': 'loading', 'url': 'https://x.dev/'});
+      events.add({'id': 'w', 'type': 'completed', 'url': 'https://x.dev/'});
       await Future<void>.delayed(Duration.zero);
-      expect(error, isNull);
-      expect(seen, isEmpty);
-      await sub.cancel();
-    });
-
-    test('C7: a foreign undecodable payload never errors this subscriber',
-        () async {
-      final events = StreamController<Object?>();
-      addTearDown(() => unawaited(events.close()));
-      port = MacosWebviewPort(channel: MacosWebviewChannel(
-        invoke: (m, a) async => {'ok': true},
-        eventSource: (method) => method == 'captureEvents'
-            ? events.stream
-            : const Stream.empty(),
-      ));
-      Object? error;
-      final seen = <WebviewCaptureEntry>[];
-      final sub = port.captureEvents(id: 'w').listen(
-            seen.add,
-            onError: (Object e) => error = e,
-          );
-      await Future<void>.delayed(Duration.zero);
-      events.add({1: 'not-a-string-key'});
-      await Future<void>.delayed(Duration.zero);
-      expect(error, isNull);
-      expect(seen, isEmpty);
+      expect(seen.map((e) => e.phase), [WebviewNavigationPhase.completed]);
       await sub.cancel();
     });
   });

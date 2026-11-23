@@ -5,11 +5,7 @@ library;
 import 'dart:async';
 
 /// The phase of a navigation event (channel key `type`).
-///
-/// [unknown] is the explicit bucket for a phase this client does not know
-/// (a forward-compat native rename or a new phase): the record surfaces the
-/// gap instead of mislabelling the event as a navigation.
-enum WebviewNavigationPhase { started, completed, failed, unknown }
+enum WebviewNavigationPhase { started, completed, failed }
 
 /// One navigation observation pushed by the platform for a webview.
 class WebviewNavigationEvent {
@@ -28,23 +24,33 @@ class WebviewNavigationEvent {
   }) : at = at ?? DateTime.now();
 
   /// Codec from channel args: `type`, `url`, `isMainFrame` (default true),
-  /// `code` (optional). An unrecognised `type` decodes to
-  /// [WebviewNavigationPhase.unknown] — the record never claims a
-  /// navigation the platform did not report.
-  static WebviewNavigationEvent fromChannelArgs(
+  /// `code` (optional).
+  ///
+  /// Returns null when `type` names no known phase: an unrecognised event
+  /// is dropped rather than silently recorded as `started`, so a platform
+  /// rename or typo cannot inject phantom visits into the record.
+  static WebviewNavigationEvent? fromChannelArgs(
     Map<String, Object?> args, {
     DateTime? at,
-  }) =>
-      WebviewNavigationEvent(
-        phase: WebviewNavigationPhase.values.firstWhere(
-          (p) => p.name == args['type'],
-          orElse: () => WebviewNavigationPhase.unknown,
-        ),
-        url: args['url'] as String? ?? '',
-        isMainFrame: args['isMainFrame'] as bool? ?? true,
-        errorCode: args['code'] as String?,
-        at: at,
-      );
+  }) {
+    final phase = phaseOf(args['type']);
+    if (phase == null) return null;
+    return WebviewNavigationEvent(
+      phase: phase,
+      url: args['url'] as String? ?? '',
+      isMainFrame: args['isMainFrame'] as bool? ?? true,
+      errorCode: args['code'] as String?,
+      at: at,
+    );
+  }
+
+  /// The phase named by a raw channel `type`, or null when unrecognised.
+  static WebviewNavigationPhase? phaseOf(Object? raw) {
+    for (final phase in WebviewNavigationPhase.values) {
+      if (phase.name == raw) return phase;
+    }
+    return null;
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -92,6 +98,7 @@ class NavigationTracker {
 
   final Map<String, List<UrlVisit>> _entries = {};
   final Map<String, StreamSubscription<WebviewNavigationEvent>> _subs = {};
+  final Map<String, Object> _errors = {};
 
   NavigationTracker({
     this.dedupWindow = defaultDedupWindow,
@@ -102,35 +109,38 @@ class NavigationTracker {
   /// Records events from [events] under [id], replacing any previous
   /// subscription for that id. Cancel with [detach].
   ///
-  /// Adapter streams surface typed data-plane errors by contract
-  /// (`malformed_response`, `channel_not_wired`); they are contained here so
-  /// one bad native payload never becomes an unhandled async error in the
-  /// consumer's zone. A caller that subscribes to a stream manually must
-  /// pass its own `onError`.
+  /// The streams are specified to carry typed errors (`channel_not_wired`,
+  /// `malformed_response`), so a handler is installed: without one they
+  /// would surface as unhandled async errors. The last one is readable
+  /// via [error].
   void attach(String id, Stream<WebviewNavigationEvent> events) {
     _subs[id]?.cancel();
+    _errors.remove(id);
     _subs[id] = events.listen(
       (e) => handleEvent(id, e),
-      onError: (Object error) {
-        // Contained: a stream error is data-plane noise, not a reason to
-        // tear down the consumer's zone.
-        assert(() {
-          // ignore: avoid_print
-          print('NavigationTracker: navigation stream error for $id: $error');
-          return true;
-        }());
-      },
+      onError: (Object error, StackTrace _) => _errors[id] = error,
     );
   }
 
-  /// Stops recording for [id] (keeps the record accumulated so far); use
-  /// [clear] to also drop the record.
+  /// The last stream error observed for [id], if any.
+  Object? error(String id) => _errors[id];
+
+  /// Stops recording for [id] (keeps the record accumulated so far).
   void detach(String id) {
     _subs.remove(id)?.cancel();
   }
 
-  /// Drops every recorded visit for [id].
-  void clear(String id) => _entries.remove(id);
+  /// Cancels every subscription (call when the tracker is done).
+  void dispose() {
+    for (final sub in _subs.values) {
+      sub.cancel();
+    }
+    _subs.clear();
+  }
+
+  /// Drops the recorded visits for [id] (the sibling of
+  /// `NetworkCaptureManager.clear`).
+  void clear(String id) => _entries[id]?.clear();
 
   /// Records one event. Pure — no webview required. Timing authority is
   /// the tracker's [clock] — platform event timestamps are informational.

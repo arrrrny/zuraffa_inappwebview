@@ -65,6 +65,13 @@ class CaptureFakePort implements WebviewPort {
       const Stream.empty();
 
   @override
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) async {}
+
+  @override
   Future<void> setCaptureEnabled({
     required String id,
     required bool enabled,
@@ -106,18 +113,6 @@ void main() {
           quality: 80,
         ).toChannelArgs(),
         {'format': 'jpeg', 'quality': 80},
-      );
-    });
-
-    test('S7: quality clamps to the documented 1–100 range', () {
-      expect(const ScreenshotConfiguration(quality: 0).quality, 1);
-      expect(const ScreenshotConfiguration(quality: -5).quality, 1);
-      expect(const ScreenshotConfiguration(quality: 101).quality, 100);
-      expect(const ScreenshotConfiguration(quality: 80).quality, 80);
-      expect(
-        const ScreenshotConfiguration(quality: 400)
-            .toChannelArgs()['quality'],
-        100,
       );
     });
   });

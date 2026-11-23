@@ -32,6 +32,25 @@ export 'src/webview_module.dart'
     show WebviewModule, registerWebview;
 export 'src/webview_port.dart' show WebviewPort;
 export 'src/webview_service.dart' show UnwiredWebviewPort, WebviewService;
+export 'src/webview_pool.dart' show WebviewPool;
+export 'src/portable_sessions.dart'
+    show PortableSession, WebviewSessionStore, WebViewSessions;
+export 'src/session_recipes.dart'
+    show
+        RecipeDriver,
+        RecipeRecorder,
+        RecipeStep,
+        RecipeTapStep,
+        RecipeUrlStep,
+        ReplayProgress,
+        ReplayResult,
+        SessionRecipe,
+        WebviewServiceRecipeDriver,
+        replay;
+export 'src/vcr_record_replay.dart'
+    show Cassette, CassetteEntry, VcrRecorder, VcrReplayer;
+export 'src/webview_agent_tools.dart'
+    show ScreenshotArtifactSink, WebviewAgentTools;
 export 'src/webview_types.dart'
     show
         ScreenshotConfiguration,

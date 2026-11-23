@@ -1,7 +1,61 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:test/test.dart';
 import 'package:zuraffa_inappwebview/zuraffa_inappwebview.dart';
+
+/// Golden copy of the canonical dismissal script.
+///
+/// Deliberately duplicated from `DialogueDismissScript.source`: the shipped
+/// payload is a behaviour contract, so editing it must be a conscious,
+/// reviewable diff here too (spec 002, D3/D4). Whitespace is normalized
+/// before comparison, so only a semantic edit trips the pin.
+const String _goldenDismissSource = '''
+(function () {
+  try {
+    var removed = 0;
+    var all = document.querySelectorAll('*');
+    var doomed = [];
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      if (el === document.documentElement || el === document.body) continue;
+      var pos = window.getComputedStyle(el).position;
+      if (pos === 'fixed' || pos === 'sticky') doomed.push(el);
+    }
+    for (var k = 0; k < doomed.length; k++) {
+      doomed[k].remove();
+      removed++;
+    }
+    var roots = [document.documentElement, document.body];
+    for (var j = 0; j < roots.length; j++) {
+      if (!roots[j]) continue;
+      roots[j].style.overflow = '';
+      roots[j].style.margin = '';
+    }
+    return removed;
+  } catch (e) {
+    return 0;
+  }
+})()
+''';
+
+/// Golden copy of the reset block (spec 002, D4).
+const String _goldenResetBlock = '''
+    var roots = [document.documentElement, document.body];
+    for (var j = 0; j < roots.length; j++) {
+      if (!roots[j]) continue;
+      roots[j].style.overflow = '';
+      roots[j].style.margin = '';
+    }
+''';
+
+/// Trims each line and drops blanks so the pins tolerate reformatting.
+String _normalizeSource(String source) => source
+    .split('\n')
+    .map((line) => line.trim())
+    .where((line) => line.isNotEmpty)
+    .join('\n');
 
 /// Fake port that records every evaluated JS source (per id) and can be
 /// scripted to raise during evaluation.
@@ -65,6 +119,13 @@ class RecordingWebviewPort implements WebviewPort {
       const Stream.empty();
 
   @override
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) async {}
+
+  @override
   Future<void> setCaptureEnabled({
     required String id,
     required bool enabled,
@@ -117,11 +178,6 @@ void main() {
     });
   });
 
-  // D3–D5 are contract-pinning tests: they pin the shape of the canonical
-  // script payload handed to the platform, not its runtime effect. A JS
-  // engine only exists in the native shell, so behavioral coverage of the
-  // script belongs to the adapter/e2e tier where `evaluateJavascript`
-  // actually runs.
   group('US2 — canonical script', () {
     final source = DialogueDismissScript.source;
 
@@ -130,13 +186,30 @@ void main() {
       expect(source, contains('fixed'));
       expect(source, contains('sticky'));
       expect(source, contains('.remove()'));
+      // The exact condition is pinned: a substring test alone would accept
+      // a no-op dismisser (`pos === "fixed" && pos === "sticky"`).
+      expect(source, contains("pos === 'fixed' || pos === 'sticky'"));
+    });
+
+    test('D3 golden: canonical source is pinned to the shipped copy', () {
+      expect(_normalizeSource(source), _normalizeSource(_goldenDismissSource));
+    });
+
+    test('D3b: the document roots are never removed', () {
+      expect(
+        source,
+        contains(
+          'if (el === document.documentElement || el === document.body) '
+          'continue;',
+        ),
+      );
     });
 
     test('D4: resets overflow/margin on documentElement and body', () {
-      expect(source, contains('documentElement'));
-      expect(source, contains('body'));
-      expect(source, contains('overflow'));
-      expect(source, contains('margin'));
+      expect(
+        _normalizeSource(source),
+        contains(_normalizeSource(_goldenResetBlock)),
+      );
     });
 
     test('D5: top-level document only (no frames recursion)', () {
@@ -144,6 +217,35 @@ void main() {
       expect(source, isNot(contains('iframe')));
       expect(source, isNot(contains('contentWindow')));
     });
+
+    test(
+      'D3/D4: the payload removes fixed/sticky overlays and resets the roots',
+      () async {
+        final dir = Directory.systemTemp.createTempSync('dialogue-dismiss');
+        addTearDown(() => dir.deleteSync(recursive: true));
+        final harness = File('${dir.path}/harness.js')
+          ..writeAsStringSync(
+            _harness.replaceFirst('__SCRIPT__', DialogueDismissScript.source),
+          );
+
+        final result = Process.runSync(_nodePath!, [harness.path]);
+        expect(result.exitCode, 0, reason: 'node failed: ${result.stderr}');
+        final out =
+            jsonDecode(result.stdout as String) as Map<String, Object?>;
+
+        expect(out['removed'], 2);
+        expect(out['fixedRemoved'], isTrue);
+        expect(out['stickyRemoved'], isTrue);
+        expect(out['staticRemoved'], isFalse);
+        // the roots started dirty and came back cleared, proving the
+        // payload reset them rather than merely leaving them alone
+        expect(out['rootOverflow'], '');
+        expect(out['rootMargin'], '');
+        expect(out['bodyOverflow'], '');
+        expect(out['bodyMargin'], '');
+      },
+      skip: _nodePath == null ? 'node is not installed' : false,
+    );
   });
 
   group('US3 — policy', () {
@@ -185,6 +287,14 @@ void main() {
       expect(port.evaluated, hasLength(1));
     });
 
+    test('D9: non-Exception errors are swallowed as well', () async {
+      // A mis-wired port throws Error subclasses (StateError/TypeError),
+      // which the previous `on Exception` guard let through.
+      port.evaluateHook = (_) => throw StateError('mis-wired port');
+      await service.dismissDialogues(id: 'scraper');
+      expect(port.evaluated, hasLength(1));
+    });
+
     test('D10: attempts drive repeated evaluations with delay', () async {
       const policy = DialogueDismissPolicy(
         attempts: 3,
@@ -199,3 +309,45 @@ void main() {
     });
   });
 }
+
+/// Behavioral harness (spec 002, US2): a minimal DOM — one `fixed`, one
+/// `sticky` and one `static` node, plus roots whose overflow/margin start
+/// dirty — for executing the payload under a real JS engine. A payload
+/// with a wrong operator, an early `return` or a missing `remove()` fails
+/// the assertions that read this output.
+const String _harness = r'''
+const elements = [
+  {id: 'fixed', position: 'fixed', removed: false},
+  {id: 'sticky', position: 'sticky', removed: false},
+  {id: 'static', position: 'static', removed: false},
+];
+for (const el of elements) {
+  el.remove = () => { el.removed = true; };
+}
+const documentElement = {style: {overflow: 'scroll', margin: 'scroll'}};
+const body = {style: {overflow: 'hidden', margin: '8px'}};
+const document = {
+  querySelectorAll: () => elements,
+  documentElement: documentElement,
+  body: body,
+};
+const window = {getComputedStyle: (el) => ({position: el.position})};
+const removed = __SCRIPT__;
+console.log(JSON.stringify({
+  removed: removed,
+  fixedRemoved: elements[0].removed,
+  stickyRemoved: elements[1].removed,
+  staticRemoved: elements[2].removed,
+  rootOverflow: documentElement.style.overflow,
+  rootMargin: documentElement.style.margin,
+  bodyOverflow: body.style.overflow,
+  bodyMargin: body.style.margin,
+}));
+''';
+
+/// `node`, or null when no engine is on PATH (the behavioral test skips).
+final String? _nodePath = () {
+  final which = Process.runSync('which', ['node']);
+  if (which.exitCode != 0) return null;
+  return (which.stdout as String).trim();
+}();

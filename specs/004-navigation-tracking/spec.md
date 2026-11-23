@@ -23,10 +23,8 @@ A caller subscribes to `service.navigationEvents(id: 'scraper')` and
 receives typed `WebviewNavigationEvent`s as the platform reports them:
 phase `started`/`completed`/`failed`, url, main-frame flag, optional error
 code, timestamp. The events decode from channel args
-(`{'type', 'url', 'isMainFrame', 'code'}`); a `type` this client does not
-know decodes to the explicit `unknown` phase rather than being mislabelled
-as `started`; unknown ids fail the typed `not_created` guard; the unwired
-port surfaces `port_not_wired`.
+(`{'type', 'url', 'isMainFrame', 'code'}`); unknown ids fail the typed
+`not_created` guard; the unwired port surfaces `port_not_wired`.
 
 **Why this priority**: The stream is the seam every downstream feature
 (recipes, VCR, auto-dismiss) consumes.
@@ -53,11 +51,11 @@ codec round-trip and guards.
 A caller constructs `NavigationTracker()` and either feeds it events
 directly (`handleEvent`) or attaches it to a webview's event stream
 (`attach(id, stream)`). The tracker keeps an ordered, deduplicated record
-per webview id: the same url observed inside the dedup window (500ms
-default) collapses to one entry keeping the earliest; sub-frame events are
+per webview id: a (phase + url) transition repeating immediately after the
+preceding visit inside the dedup window (500ms default) collapses into that
+visit — the scope is adjacency, not the whole window; sub-frame events are
 dropped by default (`mainFrameOnly`). Cycle detection reports A→B→A
 revisits — the fingerprint zikzak used to detect redirect/login loops.
-`detach(id)` stops recording but keeps the record; `clear(id)` drops it.
 
 **Why this priority**: The ordered URL-cycle record is the feature's value
 (scrapers decide "where did I actually land" and "am I looping").

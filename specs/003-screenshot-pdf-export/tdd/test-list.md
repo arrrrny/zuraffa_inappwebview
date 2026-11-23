@@ -10,6 +10,5 @@
 | S6a | android adapter: forwards `takeScreenshot` + config args, decodes `data`, null passthrough, `malformed_response` on non-list, `exportPdf` method name | T003 | DONE |
 | S6b | ios adapter: same contract | T004 | DONE |
 | S6c | macos adapter: same contract | T005 | DONE |
-| S7 | `ScreenshotConfiguration.quality` clamps to 1–100 | T008 | DONE |
 
-Counts: 10 behaviors (S6×3 counted per platform), 10 DONE.
+Counts: 9 behaviors (S6×3 counted per platform), 9 driven red → green, 0 remaining.

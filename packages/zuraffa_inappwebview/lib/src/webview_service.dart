@@ -94,6 +94,16 @@ class WebviewService {
     return port.exportPdf(id: id);
   }
 
+  /// Renders [html] directly with an optional [baseUrl] (spec 008).
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) {
+    _requireCreated(id);
+    return port.loadHtml(id: id, html: html, baseUrl: baseUrl);
+  }
+
   /// Navigation events for the webview bound to [id] (spec 004).
   Stream<WebviewNavigationEvent> navigationEvents({required String id}) {
     _requireCreated(id);
@@ -117,9 +127,10 @@ class WebviewService {
           id: id,
           source: DialogueDismissScript.source,
         );
-      } on Exception {
+      } on Object {
         // FR-5: dismissal is best-effort — a page-level JS failure must not
-        // propagate.
+        // propagate. `Error`s (StateError/TypeError from a mis-wired port)
+        // count too, not just `Exception`s.
       }
     }
   }
@@ -235,6 +246,14 @@ class UnwiredWebviewPort implements WebviewPort {
 
   @override
   Future<List<int>?> exportPdf({required String id}) => _unwired();
+
+  @override
+  Future<void> loadHtml({
+    required String id,
+    required String html,
+    String? baseUrl,
+  }) =>
+      _unwired();
 
   @override
   Stream<WebviewNavigationEvent> navigationEvents({required String id}) =>

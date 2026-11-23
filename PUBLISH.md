@@ -17,19 +17,23 @@
 ## Scripts
 
 - **Pre-publish**: `./scripts/prepare_for_publish.sh <version>` — creates `publish-<version>` branch, bumps all package versions + in-family constraints, propagates the root CHANGELOG entry into each package, commits
-- **Publish**: `./scripts/publish.sh` — dry-run + publish per package in order, waits for pub.dev propagation (needs flutter/dart on PATH)
+- **Publish**: `./scripts/publish.sh` — dry-run + publish per package in order, retries pub.dev's new-package rate limit with backoff (spaces the first publishes of a fresh family), waits for pub.dev propagation (needs flutter/dart on PATH)
 - **Post-publish**: `./scripts/push_to_master.sh -f` — merges the publish branch to master, tags, pushes, deletes the branch
-- **Restore dev**: not needed — `dependency_overrides` are stripped by pub on publish; nothing to convert back
+- **Restore dev**: not needed — `dependency_overrides` are stripped by pub on publish; nothing to convert back. The adapters commit a `pubspec_overrides.yaml` pointing the in-family packages at their `packages/` siblings, so a clean checkout resolves this tree; the file is never archived, so publish still ships the hosted constraints.
 
 ## Workflow
 
 1. Write the release notes as a `## <version>` entry at the TOP of the root `CHANGELOG.md`
 2. `./scripts/prepare_for_publish.sh <version>`
 3. `git push origin publish-<version>`
-4. `bash scripts/publish.sh` (allow 10-30 min: propagation waits between packages)
+4. `bash scripts/publish.sh` (allow 10-30 min: propagation waits between packages; a first-ever publish also waits out pub.dev's new-package rate limit)
 5. `bash scripts/push_to_master.sh -f`
 
 ## Notes
 
 - `zikzak`-style sibling path overrides never need converting: pub ignores `dependency_overrides` when publishing.
 - Sibling packages fail `dart pub publish --dry-run` until their hosted in-family dependencies exist on pub.dev — publish in order and each dry-run goes green in turn.
+
+---
+
+**Mono version policy:** every package in the zuraffa fleet shares one version number. Bump the whole fleet with `../zuraffa/scripts/update_fleet.sh <version>`. Whenever a version is updated, the install guide in this repo's README.md MUST be updated to that release version in the same change — no old version constraints may linger in README install snippets. Dependency constraints on `zuraffa` itself must move to `^<version>` in the same bump.
